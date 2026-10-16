@@ -542,21 +542,21 @@
       Math: [
         function division(ctx) {
           const b = 2 + R(8), c = 2 + R(8), a = b * c;
-          const place = pick(ctx.names);
+          const place = ctx.nextStopName || pick(ctx.names);
           const d = [];
           if (c > 1) d.push(String(c - 1));
           d.push(String(c + 1), String(c + 2), String(c + 3));
           return {
             q: `You need ${a} gallons of gas to reach ${place}. Your tank holds ${b} gallons. How many full tanks is that?`,
             opts: buildOptions(String(c), d),
-            expl: `${a} ÷ ${b} = ${c}. You'll need ${c} full tanks!`
+            expl: `${a} ÷ ${b} = ${c}. You'll need ${c} full tanks to reach ${place}!`
           };
         },
         function multiplication(ctx) {
           const m = 2 + R(7), n = 2 + R(7), a = m * n;
-          const place = pick(ctx.names);
+          const place = ctx.nextStopName || pick(ctx.names);
           return {
-            q: `Near ${place}, each gift box holds ${n} postcards. You buy ${m} boxes. How many postcards is that?`,
+            q: `At the next stop, ${place}, each gift box holds ${n} postcards. You buy ${m} boxes. How many postcards is that?`,
             opts: buildOptions(String(a), [String(a + m), String(a - m), String(a + n), String(a - n), String(a + 10)]),
             expl: `${m} × ${n} = ${a}. That's ${a} postcards!`
           };
@@ -861,7 +861,7 @@
       const rect = mapCanvas.getBoundingClientRect();
       const px = (e.clientX - rect.left) / rect.width * 100;
       const py = (e.clientY - rect.top) / rect.height * 100;
-      let best = -1, bestD = 7;
+      let best = -1, bestD = 12;
       CITIES.forEach((c, i) => {
         const d = Math.hypot(c.x - px, c.y - py);
         if (d < bestD) { bestD = d; best = i; }
@@ -1170,6 +1170,9 @@
       inChallenge = true;
       currentStopIndex++;
       const stop = stops[currentStopIndex];
+      // word problems name the stop you're driving toward next
+      const nextStop = stops[currentStopIndex + 1];
+      routeCtx.nextStopName = nextStop ? nextStop.name : stop.name;
       const q = makeQuestion(stop.subject);
 
       document.getElementById('stop-title').innerText = `📍 Arrival: ${stop.name} (${stop.subject} Challenge)`;
