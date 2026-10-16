@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>USA Coast-to-Coast Dash!</title>
+  <style>
+    :root {
+      --bg: #1e1b4b;
+      --card: #312e81;
+      --accent: #f59e0b;
+      --text: #ffffff;
+      --success: #10b981;
+      --danger: #ef4444;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      user-select: none;
+    }
+
+    body {
+      background: #0f172a;
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 10px;
+    }
+
+    #game-container {
+      width: 100%;
+      max-width: 800px;
+      background: var(--bg);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+      border: 4px solid #4338ca;
+      position: relative;
+    }
+
+    /* Header Bar */
+    .hud {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 20px;
+      background: #1e1b4b;
+      border-bottom: 2px solid #3730a3;
+      font-weight: bold;
+      font-size: 1.1rem;
+    }
+
+    .hud-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .badge {
+      background: #3730a3;
+      padding: 4px 10px;
+      border-radius: 20px;
+      color: #fde047;
+    }
+
+    /* Canvas / Driving Area */
+    #canvas-container {
+      position: relative;
+      width: 100%;
+      height: 380px;
+      background: #334155;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Modal / Challenge Overlay */
+    .overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.95);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 24px;
+      text-align: center;
+      z-index: 10;
+    }
+
+    .overlay.hidden {
+      display: none;
+    }
+
+    h1, h2 {
+      margin-bottom: 12px;
+      color: #fde047;
+    }
+
+    p {
+      font-size: 1.1rem;
+      margin-bottom: 20px;
+      max-width: 600px;
+      line-height: 1.5;
+    }
+
+    .btn {
+      background: #10b981;
+      color: white;
+      border: none;
+      padding: 12px 28px;
+      font-size: 1.2rem;
+      font-weight: bold;
+      border-radius: 30px;
+      cursor: pointer;
+      transition: transform 0.1s, background 0.2s;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3);
+    }
+
+    .btn:hover {
+      background: #059669;
+      transform: scale(1.05);
+    }
+
+    /* Quiz / Question UI */
+    .question-card {
+      background: var(--card);
+      padding: 20px;
+      border-radius: 12px;
+      width: 100%;
+      max-width: 550px;
+      margin-bottom: 20px;
+      border: 2px solid #4f46e5;
+    }
+
+    .options-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      width: 100%;
+      max-width: 550px;
+    }
+
+    .option-btn {
+      background: #4338ca;
+      color: white;
+      border: 2px solid #6366f1;
+      padding: 14px;
+      font-size: 1rem;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+
+    .option-btn:hover {
+      background: #4f46e5;
+      border-color: #818cf8;
+    }
+
+    /* Graph rendering in quiz */
+    .graph-container {
+      display: flex;
+      justify-content: space-around;
+      align-items: flex-end;
+      height: 100px;
+      margin: 15px 0;
+      background: #1e1b4b;
+      padding: 10px;
+      border-radius: 8px;
+    }
+
+    .bar-group {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      height: 100%;
+      justify-content: flex-end;
+      width: 20%;
+    }
+
+    .bar {
+      width: 100%;
+      background: var(--accent);
+      border-radius: 4px 4px 0 0;
+      transition: height 0.3s;
+    }
+
+    .bar-label {
+      font-size: 0.75rem;
+      margin-top: 4px;
+    }
+
+    /* Progress Tracker */
+    .progress-bar-container {
+      width: 100%;
+      height: 14px;
+      background: #334155;
+      position: relative;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #f59e0b, #10b981);
+      width: 0%;
+      transition: width 0.4s ease;
+    }
+
+    .city-markers {
+      display: flex;
+      justify-content: space-between;
+      padding: 6px 15px;
+      font-size: 0.8rem;
+      background: #0f172a;
+      color: #94a3b8;
+    }
+
+    .city-marker.active {
+      color: #fde047;
+      font-weight: bold;
+    }
+
+    /* Controls Overlay */
+    .controls-hint {
+      position: absolute;
+      bottom: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.6);
+      padding: 6px 16px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="game-container">
+    <!-- Header HUD -->
+    <div class="hud">
+      <div class="hud-item">📍 <span id="current-location" class="badge">New York City</span></div>
+      <div class="hud-item">⭐ Score: <span id="score" class="badge">0</span></div>
+      <div class="hud-item">⛽ Fuel: <span id="fuel" class="badge">100%</span></div>
+    </div>
+
+    <!-- Canvas Driving Scene -->
+    <div id="canvas-container">
+      <canvas id="gameCanvas"></canvas>
+      <div id="controls-hint" class="controls-hint">⬅️ Use LEFT / RIGHT arrows or A/D to steer ➡️</div>
+
+      <!-- Start Screen -->
+      <div id="start-overlay" class="overlay">
+        <h1>🏎️ USA Coast-to-Coast Dash!</h1>
+        <p>Drive from <strong>New York to San Francisco</strong> in record time! Collect stars and gas on the highway, and solve fun Math, Geography, English, & Graph challenges at each state stop!</p>
+        <button class="btn" onclick="startGame()">Start Road Trip!</button>
+      </div>
+
+      <!-- Stop Challenge Overlay -->
+      <div id="challenge-overlay" class="overlay hidden">
+        <h2 id="stop-title">Pitstop Challenge!</h2>
+        <div class="question-card" id="question-card">
+          <!-- Question inserted via JS -->
+        </div>
+        <div class="options-grid" id="options-grid">
+          <!-- Options inserted via JS -->
+        </div>
+      </div>
+
+      <!-- Victory Screen -->
+      <div id="victory-overlay" class="overlay hidden">
+        <h1>🎉 You Reached San Francisco!</h1>
+        <p>Incredible driving and smart thinking! You crossed the entire United States!</p>
+        <h2 style="color: #10b981;">Final Score: <span id="final-score">0</span></h2>
+        <button class="btn" onclick="resetGame()">Play Again</button>
+      </div>
+    </div>
+
+    <!-- Progress Tracker -->
+    <div class="progress-bar-container">
+      <div id="progress-fill" class="progress-fill"></div>
+    </div>
+    <div class="city-markers" id="city-markers">
+      <span class="city-marker active">NYC</span>
+      <span class="city-marker">Niagara</span>
+      <span class="city-marker">Chicago</span>
+      <span class="city-marker">Rushmore</span>
+      <span class="city-marker">Yellowstone</span>
+      <span class="city-marker">Grand Canyon</span>
+      <span class="city-marker">SF</span>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // Resize canvas dynamically
+    function resizeCanvas() {
+      canvas.width = canvas.parentElement.clientWidth;
+      canvas.height = canvas.parentElement.clientHeight;
+    }
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    // Game state variables
+    let gameRunning = false;
+    let inChallenge = false;
+    let score = 0;
+    let fuel = 100;
+    let currentStopIndex = 0;
+    let distanceTraveled = 0;
+    const distancePerLeg = 1000; // Distance needed to reach next stop
+
+    // Player Car
+    const player = {
+      x: 0,
+      y: 0,
+      width: 40,
+      height: 70,
+      speed: 6,
+      lane: 1 // 0: Left, 1: Middle, 2: Right
+    };
+
+    // Controls
+    const keys = { Left: false, Right: false };
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft' || e.key === 'a') keys.Left = true;
+      if (e.key === 'ArrowRight' || e.key === 'd') keys.Right = true;
+    });
+    window.addEventListener('keyup', (e) => {
+      if (e.key === 'ArrowLeft' || e.key === 'a') keys.Left = false;
+      if (e.key === 'ArrowRight' || e.key === 'd') keys.Right = false;
+    });
+
+    // Highway Objects
+    let roadItems = [];
+    let roadLinesY = 0;
+
+    // Stops & Challenges (3rd Grade Math, English, Geography, Graphs)
+    const stops = [
+      { name: "New York City", x: 0 },
+      {
+        name: "Niagara Falls, NY",
+        type: "Math",
+        question: "You need 24 gallons of gas to reach Niagara. If your tank holds 6 gallons, how many full tanks is that?",
+        options: ["3 tanks", "4 tanks", "6 tanks", "8 tanks"],
+        correct: 1,
+        hint: "24 ÷ 6 = ?"
+      },
+      {
+        name: "Chicago, IL",
+        type: "English",
+        question: "Which of these words is a PROPER NOUN that should always be capitalized?",
+        options: ["highway", "car", "Chicago", "driving"],
+        correct: 2,
+        hint: "Proper nouns name specific places, people, or things!"
+      },
+      {
+        name: "Mount Rushmore, SD",
+        type: "Geography",
+        question: "Mount Rushmore features 4 famous US Presidents. Which direction are you traveling to reach California?",
+        options: ["East", "West", "North", "South"],
+        correct: 1,
+        hint: "New York is East, California is West!"
+      },
+      {
+        name: "Yellowstone National Park, WY",
+        type: "Graphs",
+        question: "Look at the animal sightings bar chart. Which animal was spotted the MOST?",
+        isGraph: true,
+        graphData: [{label: "Bears", val: 40}, {label: "Bison", val: 90}, {label: "Elk", val: 60}],
+        options: ["Bears", "Bison", "Elk", "They are equal"],
+        correct: 1,
+        hint: "Find the tallest bar on the chart!"
+      },
+      {
+        name: "Grand Canyon, AZ",
+        type: "Math & Logic",
+        question: "A souvenir postcard costs $3. You give the cashier a $10 bill. How much change do you get back?",
+        options: ["$5", "$6", "$7", "$8"],
+        correct: 2,
+        hint: "$10 - $3 = ?"
+      },
+      { name: "San Francisco, CA", x: 6000 }
+    ];
+
+    function startGame() {
+      document.getElementById('start-overlay').classList.add('hidden');
+      resetGameState();
+      gameRunning = true;
+      requestAnimationFrame(gameLoop);
+    }
+
+    function resetGameState() {
+      score = 0;
+      fuel = 100;
+      currentStopIndex = 0;
+      distanceTraveled = 0;
+      inChallenge = false;
+      roadItems = [];
+      player.x = canvas.width / 2 - player.width / 2;
+      player.y = canvas.height - player.height - 20;
+      updateHUD();
+    }
+
+    function resetGame() {
+      document.getElementById('victory-overlay').classList.add('hidden');
+      startGame();
+    }
+
+    // Spawn fuel cans and stars on road
+    function spawnRoadItems() {
+      if (Math.random() < 0.03) {
+        const laneX = [
+          canvas.width * 0.28,
+          canvas.width * 0.48,
+          canvas.width * 0.68
+        ];
+        const randomLane = laneX[Math.floor(Math.random() * laneX.length)];
+        const types = ['star', 'gas', 'cone'];
+        const type = types[Math.floor(Math.random() * types.length)];
+
+        roadItems.push({
+          x: randomLane,
+          y: -50,
+          type: type,
+          size: 30
+        });
+      }
+    }
+
+    function updateHUD() {
+      document.getElementById('score').innerText = score;
+      document.getElementById('fuel').innerText = Math.max(0, Math.round(fuel)) + '%';
+      document.getElementById('current-location').innerText = stops[currentStopIndex].name;
+
+      const progressPct = (distanceTraveled / ((stops.length - 1) * distancePerLeg)) * 100;
+      document.getElementById('progress-fill').style.width = Math.min(100, progressPct) + '%';
+
+      // Highlight active city
+      const markers = document.querySelectorAll('.city-marker');
+      markers.forEach((m, idx) => {
+        if (idx === currentStopIndex) m.classList.add('active');
+        else m.classList.remove('active');
+      });
+    }
+
+    // Driving Game Loop
+    function gameLoop() {
+      if (!gameRunning || inChallenge) return;
+
+      // Clear Canvas
+      ctx.fillStyle = '#15803d'; // Grass sides
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Draw Road
+      const roadWidth = canvas.width * 0.6;
+      const roadLeft = (canvas.width - roadWidth) / 2;
+      ctx.fillStyle = '#334155';
+      ctx.fillRect(roadLeft, 0, roadWidth, canvas.height);
+
+      // Draw Moving Road Lines
+      ctx.strokeStyle = '#fde047';
+      ctx.lineWidth = 4;
+      ctx.setLineDash([20, 20]);
+      ctx.lineDashOffset = -roadLinesY;
+      roadLinesY += 8;
+
+      ctx.beginPath();
+      ctx.moveTo(roadLeft + roadWidth / 3, 0);
+      ctx.lineTo(roadLeft + roadWidth / 3, canvas.height);
+      ctx.moveTo(roadLeft + (roadWidth * 2) / 3, 0);
+      ctx.lineTo(roadLeft + (roadWidth * 2) / 3, canvas.height);
+      ctx.stroke();
+      ctx.setLineDash([]); // Reset dash
+
+      // Player Movement
+      if (keys.Left && player.x > roadLeft + 10) player.x -= player.speed;
+      if (keys.Right && player.x < roadLeft + roadWidth - player.width - 10) player.x += player.speed;
+
+      // Draw Player Car
+      ctx.fillStyle = '#ef4444'; // Red Sports Car
+      ctx.beginPath();
+      ctx.roundRect(player.x, player.y, player.width, player.height, 8);
+      ctx.fill();
+      // Windshield & Details
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillRect(player.x + 5, player.y + 15, player.width - 10, 15);
+      ctx.fillStyle = '#000';
+      ctx.fillRect(player.x + 2, player.y + 5, 6, 12);
+      ctx.fillRect(player.x + player.width - 8, player.y + 5, 6, 12);
+
+      // Distance & Fuel Consumption
+      distanceTraveled += 4;
+      fuel -= 0.03;
+
+      if (fuel <= 0) {
+        fuel = 20; // Refuel safety bump
+        score = Math.max(0, score - 10);
+      }
+
+      // Check for stop triggers
+      const targetDistance = (currentStopIndex + 1) * distancePerLeg;
+      if (distanceTraveled >= targetDistance && currentStopIndex < stops.length - 2) {
+        triggerPitstop();
+        return;
+      } else if (distanceTraveled >= (stops.length - 1) * distancePerLeg) {
+        triggerVictory();
+        return;
+      }
+
+      // Spawn & Update Road Items
+      spawnRoadItems();
+      for (let i = roadItems.length - 1; i >= 0; i--) {
+        let item = roadItems[i];
+        item.y += 5;
+
+        // Draw Items
+        if (item.type === 'star') {
+          ctx.fillStyle = '#f59e0b';
+          ctx.beginPath();
+          ctx.arc(item.x, item.y, 14, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#fff';
+          ctx.font = '12px sans-serif';
+          ctx.fillText('⭐', item.x - 7, item.y + 4);
+        } else if (item.type === 'gas') {
+          ctx.fillStyle = '#10b981';
+          ctx.fillRect(item.x - 12, item.y - 12, 24, 24);
+          ctx.fillStyle = '#fff';
+          ctx.font = '12px sans-serif';
+          ctx.fillText('⛽', item.x - 7, item.y + 4);
+        } else if (item.type === 'cone') {
+          ctx.fillStyle = '#f97316';
+          ctx.beginPath();
+          ctx.moveTo(item.x, item.y - 14);
+          ctx.lineTo(item.x - 12, item.y + 12);
+          ctx.lineTo(item.x + 12, item.y + 12);
+          ctx.closePath();
+          ctx.fill();
+        }
+
+        // Collision Detection
+        if (
+          player.x < item.x + 15 &&
+          player.x + player.width > item.x - 15 &&
+          player.y < item.y + 15 &&
+          player.y + player.height > item.y - 15
+        ) {
+          if (item.type === 'star') {
+            score += 25;
+          } else if (item.type === 'gas') {
+            fuel = Math.min(100, fuel + 20);
+          } else if (item.type === 'cone') {
+            score = Math.max(0, score - 15);
+            fuel = Math.max(0, fuel - 5);
+          }
+          roadItems.splice(i, 1);
+          updateHUD();
+        } else if (item.y > canvas.height + 50) {
+          roadItems.splice(i, 1);
+        }
+      }
+
+      updateHUD();
+      requestAnimationFrame(gameLoop);
+    }
+
+    // Pitstop / Learning Challenge Logic
+    function triggerPitstop() {
+      inChallenge = true;
+      currentStopIndex++;
+      const stop = stops[currentStopIndex];
+
+      document.getElementById('stop-title').innerText = `📍 Arrival: ${stop.name} (${stop.type} Challenge)`;
+
+      const qCard = document.getElementById('question-card');
+      let htmlContent = `<p style="font-size: 1.2rem; font-weight: bold; margin-bottom: 10px;">${stop.question}</p>`;
+
+      // Render Bar Graph if question requires it
+      if (stop.isGraph) {
+        htmlContent += `<div class="graph-container">`;
+        stop.graphData.forEach(g => {
+          htmlContent += `
+            <div class="bar-group">
+              <span style="font-size:0.75rem;">${g.val}</span>
+              <div class="bar" style="height: ${g.val}%;"></div>
+              <span class="bar-label">${g.label}</span>
+            </div>
+          `;
+        });
+        htmlContent += `</div>`;
+      }
+
+      qCard.innerHTML = htmlContent;
+
+      // Load Options
+      const optGrid = document.getElementById('options-grid');
+      optGrid.innerHTML = '';
+      stop.options.forEach((opt, idx) => {
+        const btn = document.createElement('button');
+        btn.className = 'option-btn';
+        btn.innerText = opt;
+        btn.onclick = () => answerChallenge(idx === stop.correct);
+        optGrid.appendChild(btn);
+      });
+
+      document.getElementById('challenge-overlay').classList.remove('hidden');
+    }
+
+    function answerChallenge(isCorrect) {
+      if (isCorrect) {
+        score += 100;
+        fuel = 100; // Refuel bonus!
+        alert("🎉 Correct! Refueling complete (+100 pts)!");
+      } else {
+        score = Math.max(0, score - 20);
+        fuel = Math.min(100, fuel + 50);
+        alert("❌ Not quite! But you got enough gas to keep moving!");
+      }
+
+      document.getElementById('challenge-overlay').classList.add('hidden');
+      inChallenge = false;
+      requestAnimationFrame(gameLoop);
+    }
+
+    function triggerVictory() {
+      gameRunning = false;
+      document.getElementById('final-score').innerText = score;
+      document.getElementById('victory-overlay').classList.remove('hidden');
+    }
+  </script>
+</body>
+</html>
