@@ -72,4 +72,5 @@ options with one correct answer, shuffled).
 - 👆 touch: press and hold the LEFT or RIGHT half of the road to steer
 - ⭐ star: +25 pts · 🚗 traffic: dodge it! −15 pts, −5% fuel on a hit
 - Correct quiz answer: full refuel +100 pts · wrong answer: −20 pts, −10% fuel (fuel comes ONLY from correct answers!)
+- ⛽ Out of fuel = game over! You'll need to start the trip over.
 - Landmarks (🌊 🏙️ 🗿 🌋 🏜️ 🌉) appear on the roadside as you approach each stop

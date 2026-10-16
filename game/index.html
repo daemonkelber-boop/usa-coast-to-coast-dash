@@ -258,16 +258,31 @@
     #map-wrap {
       width: 100%;
       max-width: 700px;
+      aspect-ratio: 16 / 10;
       background: #0b3b5e;
       border-radius: 12px;
       border: 2px solid #4f46e5;
       overflow: hidden;
-      cursor: pointer;
     }
 
-    #mapCanvas {
+    #mapSvg {
       width: 100%;
-      height: 300px;
+      height: 100%;
+      display: block;
+      touch-action: manipulation;
+    }
+
+    .city-dot { cursor: pointer; }
+
+    .city-label {
+      font-size: 3.1px;
+      font-weight: bold;
+      fill: #ffffff;
+      text-anchor: middle;
+      pointer-events: none;
+      paint-order: stroke;
+      stroke: rgba(11, 59, 94, 0.9);
+      stroke-width: 1px;
     }
 
     #route-status {
@@ -406,7 +421,15 @@
       <div id="route-overlay" class="overlay">
         <h1>🗺️ Choose Your Road Trip!</h1>
         <p style="margin-bottom:10px;">Tap a city to <strong style="color:#10b981;">START</strong>, then tap where you want to <strong style="color:#ef4444;">FINISH</strong>!</p>
-        <div id="map-wrap"><canvas id="mapCanvas"></canvas></div>
+        <div id="map-wrap">
+          <svg id="mapSvg" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Map of the USA with clickable cities">
+            <rect x="0" y="0" width="100" height="100" fill="#0b3b5e"></rect>
+            <polygon id="usaLand" points="" fill="#86efac" stroke="#166534" stroke-width="0.8"></polygon>
+            <g id="lakes" fill="#7dd3fc"></g>
+            <polyline id="routeLine" points="" fill="none" stroke="#f59e0b" stroke-width="1.2" stroke-dasharray="3 2" style="display:none"></polyline>
+            <g id="cityLayer"></g>
+          </svg>
+        </div>
         <div id="route-status">Pick your starting city 🟢</div>
         <div class="route-btn-row">
           <button class="btn btn-secondary" onclick="surpriseRoute()">🎲 Surprise Me!</button>
@@ -438,6 +461,14 @@
             <button class="btn" onclick="resumeDrive()">Keep Driving! 🚗</button>
           </div>
         </div>
+      </div>
+
+      <!-- Game Over Screen -->
+      <div id="gameover-overlay" class="overlay hidden">
+        <h1>⛽ Out of Fuel!</h1>
+        <p>Your tank hit empty! Remember: only correct answers refuel your car.</p>
+        <h2 style="color: #f59e0b;">Score: <span id="gameover-score">0</span></h2>
+        <button class="btn" onclick="resetGame()">Try Again 🗺️</button>
       </div>
 
       <!-- Victory Screen -->
@@ -818,8 +849,6 @@
     /* ================= Game State ================= */
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
-    const mapCanvas = document.getElementById('mapCanvas');
-    const mctx = mapCanvas.getContext('2d');
 
     let W = 0, H = 0, horizon = 0;
     const MAXZ = 140;
@@ -831,7 +860,7 @@
       horizon = H * 0.40;
     }
     resizeCanvas();
-    window.addEventListener('resize', () => { resizeCanvas(); drawMap(); });
+    window.addEventListener('resize', resizeCanvas);
 
     let gameRunning = false;
     let inChallenge = false;
@@ -874,119 +903,70 @@
       document.getElementById('controls-hint').innerText = '👆 Touch & hold LEFT or RIGHT side to steer';
     }
 
-    /* ================= Route selection map ================= */
+    /* ================= Route selection map (SVG — viewBox keeps the whole US visible) ================= */
     let selStart = -1, selEnd = -1;
+    const SVGNS = 'http://www.w3.org/2000/svg';
 
-    function mapXY(cx, cy, w, h) {
-      return [cx / 100 * w, cy / 100 * h];
+    function svgEl(name, attrs, parent) {
+      const e = document.createElementNS(SVGNS, name);
+      for (const k in attrs) e.setAttribute(k, attrs[k]);
+      if (parent) parent.appendChild(e);
+      return e;
     }
 
-    function sizeMapCanvas() {
-      const wrap = document.getElementById('map-wrap');
-      mapCanvas.width = wrap.clientWidth;
-      mapCanvas.height = 300;
-    }
-
-    function drawMap() {
-      sizeMapCanvas();
-      const w = mapCanvas.width, h = mapCanvas.height;
-      // ocean
-      mctx.fillStyle = '#0b3b5e';
-      mctx.fillRect(0, 0, w, h);
-      // landmass
-      mctx.beginPath();
-      USA_OUTLINE.forEach(([cx, cy], i) => {
-        const [x, y] = mapXY(cx, cy, w, h);
-        if (i === 0) mctx.moveTo(x, y); else mctx.lineTo(x, y);
+    // Build the static map once: landmass, lakes, city dots
+    function buildMapOnce() {
+      document.getElementById('usaLand').setAttribute(
+        'points', USA_OUTLINE.map(p => p.join(',')).join(' '));
+      const lakes = document.getElementById('lakes');
+      GREAT_LAKES.forEach(([cx, cy, rx, ry]) =>
+        svgEl('ellipse', { cx, cy, rx, ry }, lakes));
+      const layer = document.getElementById('cityLayer');
+      CITIES.forEach((c, i) => {
+        const g = svgEl('g', { class: 'city-dot' }, layer);
+        // generous invisible hit area for little fingers
+        svgEl('circle', { cx: c.x, cy: c.y, r: 6, fill: 'transparent' }, g);
+        svgEl('circle', { cx: c.x, cy: c.y, r: 2.4, fill: '#f59e0b', stroke: '#ffffff', 'stroke-width': 0.7, class: 'dot-ring' }, g);
+        const t = svgEl('text', { x: c.x, y: c.y + (c.y > 75 ? -4.4 : 5.4), class: 'city-label' }, g);
+        t.textContent = c.short;
+        g.addEventListener('click', (e) => { e.stopPropagation(); onCityTap(i); });
       });
-      mctx.closePath();
-      mctx.fillStyle = '#86efac';
-      mctx.fill();
-      mctx.strokeStyle = '#166534';
-      mctx.lineWidth = 2;
-      mctx.stroke();
-      // great lakes
-      mctx.fillStyle = '#7dd3fc';
-      for (const [cx, cy, rx, ry] of GREAT_LAKES) {
-        const [x, y] = mapXY(cx, cy, w, h);
-        mctx.beginPath();
-        mctx.ellipse(x, y, rx / 100 * w, ry / 100 * h, 0, 0, Math.PI * 2);
-        mctx.fill();
-      }
-      // route preview
+    }
+
+    // Refresh dot colors + route preview line
+    function refreshMap() {
+      const layer = document.getElementById('cityLayer');
+      [...layer.children].forEach((g, i) => {
+        const ring = g.querySelector('.dot-ring');
+        let fill = '#f59e0b', stroke = '#ffffff';
+        if (i === selStart) { fill = '#10b981'; stroke = '#065f46'; }
+        if (i === selEnd) { fill = '#ef4444'; stroke = '#7f1d1d'; }
+        ring.setAttribute('fill', fill);
+        ring.setAttribute('stroke', stroke);
+      });
+      const rl = document.getElementById('routeLine');
       if (selStart >= 0 && selEnd >= 0) {
         const preview = buildRoute(selStart, selEnd);
-        mctx.strokeStyle = '#f59e0b';
-        mctx.lineWidth = 3;
-        mctx.setLineDash([8, 6]);
-        mctx.beginPath();
-        preview.forEach((s, i) => {
-          const [x, y] = mapXY(s.x, s.y, w, h);
-          if (i === 0) mctx.moveTo(x, y); else mctx.lineTo(x, y);
-        });
-        mctx.stroke();
-        mctx.setLineDash([]);
+        rl.setAttribute('points', preview.map(s => `${s.x},${s.y}`).join(' '));
+        rl.style.display = '';
+      } else {
+        rl.style.display = 'none';
       }
-      // cities
-      mctx.textAlign = 'center';
-      CITIES.forEach((c, i) => {
-        const [x, y] = mapXY(c.x, c.y, w, h);
-        let fill = '#f59e0b', ring = '#ffffff';
-        if (i === selStart) { fill = '#10b981'; ring = '#065f46'; }
-        if (i === selEnd) { fill = '#ef4444'; ring = '#7f1d1d'; }
-        mctx.beginPath();
-        mctx.arc(x, y, 9, 0, Math.PI * 2);
-        mctx.fillStyle = fill;
-        mctx.fill();
-        mctx.lineWidth = 3;
-        mctx.strokeStyle = ring;
-        mctx.stroke();
-        if (i === selStart || i === selEnd) {
-          mctx.beginPath();
-          mctx.arc(x, y, 13, 0, Math.PI * 2);
-          mctx.lineWidth = 2;
-          mctx.strokeStyle = ring;
-          mctx.stroke();
-        }
-        // label
-        mctx.font = 'bold 11px "Segoe UI", sans-serif';
-        const ly = (c.y > 75 ? y - 15 : y + 20);
-        mctx.lineWidth = 3;
-        mctx.strokeStyle = 'rgba(11,59,94,0.9)';
-        mctx.strokeText(c.short, x, ly);
-        mctx.fillStyle = '#ffffff';
-        mctx.fillText(c.short, x, ly);
-      });
     }
 
-    function mapClick(e) {
-      e.preventDefault();
-      const rect = mapCanvas.getBoundingClientRect();
-      const px = (e.clientX - rect.left) / rect.width * 100;
-      const py = (e.clientY - rect.top) / rect.height * 100;
-      let best = -1, bestD = 12;
-      CITIES.forEach((c, i) => {
-        const d = Math.hypot(c.x - px, c.y - py);
-        if (d < bestD) { bestD = d; best = i; }
-      });
-      if (best < 0) return;
+    function onCityTap(i) {
       if (selStart < 0) {
-        selStart = best;
-      } else if (selEnd < 0 && best !== selStart) {
-        selEnd = best;
+        selStart = i;
+      } else if (selEnd < 0 && i !== selStart) {
+        selEnd = i;
       } else {
         // third tap: start over with a new start city
-        selStart = best;
+        selStart = i;
         selEnd = -1;
       }
       updateRouteStatus();
-      drawMap();
+      refreshMap();
     }
-    mapCanvas.addEventListener('click', mapClick);
-    mapCanvas.addEventListener('touchstart', (e) => {
-      const t = e.changedTouches[0];
-      mapClick({ clientX: t.clientX, clientY: t.clientY, preventDefault: () => e.preventDefault() });
-    }, { passive: false });
 
     function updateRouteStatus() {
       const el = document.getElementById('route-status');
@@ -1008,7 +988,7 @@
       selStart = R(CITIES.length);
       do { selEnd = R(CITIES.length); } while (selEnd === selStart);
       updateRouteStatus();
-      drawMap();
+      refreshMap();
     }
 
     function buildMarkers() {
@@ -1338,12 +1318,13 @@
 
     function resetGame() {
       document.getElementById('victory-overlay').classList.add('hidden');
+      document.getElementById('gameover-overlay').classList.add('hidden');
       gameRunning = false;
       selStart = -1;
       selEnd = -1;
       updateRouteStatus();
       document.getElementById('route-overlay').classList.remove('hidden');
-      drawMap();
+      refreshMap();
     }
 
     function gameLoop() {
@@ -1385,12 +1366,7 @@
       drawVehicle(carX, H - 26, Math.min(110, W * 0.14), playerCar.type, playerCar.color);
 
       distanceTraveled += 4;
-      fuel -= 0.03;
-
-      if (fuel <= 0) {
-        fuel = 25;
-        score = Math.max(0, score - 10);
-      }
+      fuel -= 0.025;
 
       const targetDistance = (currentStopIndex + 1) * distancePerLeg;
       if (distanceTraveled >= targetDistance && currentStopIndex < stops.length - 2) {
@@ -1398,6 +1374,13 @@
         return;
       } else if (distanceTraveled >= (stops.length - 1) * distancePerLeg) {
         triggerVictory();
+        return;
+      }
+
+      // out of fuel = game over, start the trip over
+      if (fuel <= 0) {
+        fuel = 0;
+        triggerGameOver();
         return;
       }
 
@@ -1481,6 +1464,13 @@
       requestAnimationFrame(gameLoop);
     }
 
+    function triggerGameOver() {
+      gameRunning = false;
+      document.getElementById('gameover-score').innerText = score;
+      document.getElementById('gameover-overlay').classList.remove('hidden');
+      updateHUD();
+    }
+
     function triggerVictory() {
       gameRunning = false;
       const end = stops[stops.length - 1];
@@ -1492,8 +1482,9 @@
     }
 
     /* ================= Boot ================= */
+    buildMapOnce();
     updateRouteStatus();
-    drawMap();
+    refreshMap();
   </script>
 </body>
 </html>

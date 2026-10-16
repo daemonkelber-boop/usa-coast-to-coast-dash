@@ -29,7 +29,8 @@ with st.sidebar:
         "- Pick your trip on the map, then choose your car and color in the garage\n"
         "- Click inside the game once, then steer with ⬅️ ➡️ arrow keys (or A/D); on touch, press and hold the left/right half of the road\n"
         "- Collect ⭐ star coins (+25 pts) · dodge 🚗 traffic (−15 pts, −5% fuel)\n"
-        "- Correct answer: full refuel +100 pts · Wrong answer: −20 pts, −10% fuel (fuel comes ONLY from correct answers!)"
+        "- Correct answer: full refuel +100 pts · Wrong answer: −20 pts, −10% fuel (fuel comes ONLY from correct answers!)\n"
+        "- ⛽ Run out of fuel = game over — you'll start the trip over!"
     )
     st.header("📚 Learning goals (3rd grade)")
     st.markdown(
