@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>USA Coast-to-Coast Dash!</title>
   <style>
     :root {
@@ -20,6 +20,7 @@
       padding: 0;
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       user-select: none;
+      -webkit-user-select: none;
     }
 
     body {
@@ -74,7 +75,8 @@
       position: relative;
       width: 100%;
       height: 380px;
-      background: #334155;
+      background: #87ceeb;
+      touch-action: none;
     }
 
     canvas {
@@ -95,6 +97,7 @@
       padding: 24px;
       text-align: center;
       z-index: 10;
+      overflow-y: auto;
     }
 
     .overlay.hidden {
@@ -200,6 +203,39 @@
       margin-top: 4px;
     }
 
+    .picto-row {
+      font-size: 1.6rem;
+      letter-spacing: 4px;
+      margin: 12px 0;
+      line-height: 1.6;
+    }
+
+    /* Feedback card (replaces alert popups) */
+    .feedback-card {
+      background: var(--card);
+      padding: 24px;
+      border-radius: 12px;
+      width: 100%;
+      max-width: 550px;
+      border: 2px solid #4f46e5;
+    }
+
+    .feedback-card.correct {
+      border-color: var(--success);
+    }
+
+    .feedback-card.wrong {
+      border-color: var(--danger);
+    }
+
+    .feedback-expl {
+      background: #1e1b4b;
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 20px;
+      font-size: 1.05rem;
+    }
+
     /* Progress Tracker */
     .progress-bar-container {
       width: 100%;
@@ -240,6 +276,7 @@
       border-radius: 20px;
       font-size: 0.85rem;
       pointer-events: none;
+      white-space: nowrap;
     }
   </style>
 </head>
@@ -261,18 +298,23 @@
       <!-- Start Screen -->
       <div id="start-overlay" class="overlay">
         <h1>🏎️ USA Coast-to-Coast Dash!</h1>
-        <p>Drive from <strong>New York to San Francisco</strong> in record time! Collect stars and gas on the highway, and solve fun Math, Geography, English, & Graph challenges at each state stop!</p>
+        <p>Drive from <strong>New York to San Francisco</strong>! Cruise past real landmarks, collect stars and gas, dodge cones — and solve <strong>brand-new</strong> Math, English, Geography &amp; Graph challenges at every stop!</p>
         <button class="btn" onclick="startGame()">Start Road Trip!</button>
       </div>
 
       <!-- Stop Challenge Overlay -->
       <div id="challenge-overlay" class="overlay hidden">
-        <h2 id="stop-title">Pitstop Challenge!</h2>
-        <div class="question-card" id="question-card">
-          <!-- Question inserted via JS -->
+        <div id="quiz-part">
+          <h2 id="stop-title">Pitstop Challenge!</h2>
+          <div class="question-card" id="question-card"></div>
+          <div class="options-grid" id="options-grid"></div>
         </div>
-        <div class="options-grid" id="options-grid">
-          <!-- Options inserted via JS -->
+        <div id="feedback-part" class="hidden" style="width:100%; display:flex; flex-direction:column; align-items:center;">
+          <div class="feedback-card" id="feedback-card">
+            <h2 id="feedback-title"></h2>
+            <div class="feedback-expl" id="feedback-expl"></div>
+            <button class="btn" onclick="resumeDrive()">Keep Driving! 🚗</button>
+          </div>
         </div>
       </div>
 
@@ -301,99 +343,459 @@
   </div>
 
   <script>
+    'use strict';
+
+    /* ================= Utilities ================= */
+    const R = (n) => Math.floor(Math.random() * n);
+    const pick = (arr) => arr[R(arr.length)];
+    function shuffle(arr) {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = R(i + 1);
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    }
+    // Build exactly 4 distinct options; correct is {t, ok:true}
+    function buildOptions(correctText, distractTexts) {
+      const seen = new Set([correctText]);
+      const opts = [{ t: correctText, ok: true }];
+      for (const d of shuffle(distractTexts.slice())) {
+        if (opts.length >= 4) break;
+        if (!seen.has(d)) { seen.add(d); opts.push({ t: d, ok: false }); }
+      }
+      let n = 1;
+      while (opts.length < 4) {
+        const f = correctText + ' *';
+        const g = n === 1 ? f : f + n;
+        if (!seen.has(g)) { seen.add(g); opts.push({ t: g, ok: false }); }
+        n++;
+        if (n > 20) break; // safety, should never happen
+      }
+      return shuffle(opts);
+    }
+
+    /* ================= Infinite Question Generator =================
+       Fresh, curriculum-safe 3rd-grade questions every run — no API,
+       no internet, no repeats. Each generator returns:
+       { q, opts:[{t, ok}], expl, isGraph?, graphData?, isPicto?, picto? } */
+    const QG = {
+      Math: [
+        function division() {
+          const b = 2 + R(8), c = 2 + R(8), a = b * c;
+          const place = pick(['Niagara Falls', 'Chicago', 'Yellowstone', 'the Grand Canyon']);
+          const d = [];
+          if (c > 1) d.push(String(c - 1));
+          d.push(String(c + 1), String(c + 2), String(c + 3));
+          return {
+            q: `You need ${a} gallons of gas to reach ${place}. Your tank holds ${b} gallons. How many full tanks is that?`,
+            opts: buildOptions(String(c), d),
+            expl: `${a} ÷ ${b} = ${c}. You'll need ${c} full tanks!`
+          };
+        },
+        function multiplication() {
+          const m = 2 + R(7), n = 2 + R(7), a = m * n;
+          return {
+            q: `Each gift box holds ${n} postcards. You buy ${m} boxes. How many postcards is that?`,
+            opts: buildOptions(String(a), [String(a + m), String(a - m), String(a + n), String(a - n), String(a + 10)]),
+            expl: `${m} × ${n} = ${a}. That's ${a} postcards!`
+          };
+        },
+        function money() {
+          const p = 1 + R(8), pay = p + 1 + R(9), ch = pay - p;
+          return {
+            q: `A souvenir costs $${p}. You pay with a $${pay} bill. How much change do you get?`,
+            opts: buildOptions('$' + ch, ['$' + (ch + 1), '$' + (ch + 2), '$' + Math.max(0, ch - 1), '$' + Math.max(0, ch - 2)]),
+            expl: `$${pay} − $${p} = $${ch}. Don't forget your change!`
+          };
+        },
+        function fractions() {
+          const b = pick([4, 6, 8]);
+          const a = 1 + R(b - 1);
+          const food = pick(['pizza', 'pie']);
+          const d = [`${b}/${a}`, `${b - a}/${b}`];
+          if (b - a !== a && b - a > 0) d.push(`${a}/${b - a}`);
+          d.push(`${a}/${b + 2}`);
+          return {
+            q: `A ${food} is cut into ${b} equal slices. You eat ${a}. What fraction did you eat?`,
+            opts: buildOptions(`${a}/${b}`, d),
+            expl: `${a} out of ${b} equal parts is the fraction ${a}/${b}.`
+          };
+        }
+      ],
+      English: [
+        function properNoun() {
+          const proper = pick(['Chicago', 'Niagara Falls', 'Yellowstone', 'Grand Canyon', 'San Francisco', 'Mount Rushmore']);
+          const commons = shuffle(['highway', 'car', 'river', 'mountain', 'city', 'park', 'bridge', 'desert']).slice(0, 3);
+          return {
+            q: 'Which word is a PROPER NOUN — a name for a specific place?',
+            opts: buildOptions(proper, commons),
+            expl: `"${proper}" names one specific place, so it's a proper noun and starts with a capital letter!`
+          };
+        },
+        function verb() {
+          const v = pick(['run', 'jump', 'drive', 'swim', 'sing', 'climb']);
+          const ns = shuffle(['car', 'tree', 'dog', 'book', 'star', 'rock']).slice(0, 3);
+          return {
+            q: 'Which word is an ACTION word (a verb)?',
+            opts: buildOptions(v, ns),
+            expl: `"${v}" is something you can DO — that makes it a verb!`
+          };
+        },
+        function spelling() {
+          const s = pick([
+            { sent: '___ going to love the Grand Canyon!', ans: "They're", expl: `"They're" means "they are" — THEY'RE going to love it!` },
+            { sent: 'The bison left ___ footprints by the river.', ans: 'Their', expl: `"Their" shows belonging — the footprints belong to the bison.` },
+            { sent: 'Park your car over ___ by the big tree.', ans: 'There', expl: `"There" tells WHERE — over THERE by the tree.` }
+          ]);
+          return {
+            q: `Fill in the blank: "${s.sent}"`,
+            opts: buildOptions(s.ans, ['Their', 'There', "They're", "Their's"]),
+            expl: s.expl
+          };
+        },
+        function prefix() {
+          const items = [
+            ['un', 'happy', 'not happy'], ['re', 'build', 'build again'],
+            ['un', 'tie', 'not tied'], ['re', 'do', 'do again'],
+            ['un', 'lock', 'not locked'], ['re', 'pack', 'pack again']
+          ];
+          const [pre, root, meaning] = pick(items);
+          const others = items.filter(x => x[2] !== meaning).map(x => x[2]);
+          return {
+            q: `What does "${pre + root}" mean?`,
+            opts: buildOptions(meaning, others.concat(['to ' + root + ' quickly'])),
+            expl: `"${pre}" + "${root}" = "${pre + root}", which means "${meaning}"!`
+          };
+        }
+      ],
+      Geography: [
+        function capital() {
+          const pairs = [['New York', 'Albany'], ['California', 'Sacramento'], ['Illinois', 'Springfield'],
+                         ['South Dakota', 'Pierre'], ['Wyoming', 'Cheyenne'], ['Arizona', 'Phoenix'],
+                         ['Texas', 'Austin'], ['Colorado', 'Denver'], ['Florida', 'Tallahassee']];
+          const [st, cap] = pick(pairs);
+          const others = pairs.filter(p => p[1] !== cap).map(p => p[1]);
+          return {
+            q: `What is the capital of ${st}?`,
+            opts: buildOptions(cap, others),
+            expl: `${cap} is the capital of ${st}!`
+          };
+        },
+        function landmarkState() {
+          const items = [['Grand Canyon', 'Arizona'], ['Yellowstone', 'Wyoming'], ['Mount Rushmore', 'South Dakota'],
+                         ['Niagara Falls', 'New York'], ['Golden Gate Bridge', 'California']];
+          const [lm, st] = pick(items);
+          const others = items.filter(x => x[1] !== st).map(x => x[1]);
+          return {
+            q: `The ${lm} is in which state?`,
+            opts: buildOptions(st, others),
+            expl: `The ${lm} is in ${st} — you may have just driven past it!`
+          };
+        },
+        function direction() {
+          const t = pick([
+            { q: 'You are driving from New York City all the way to San Francisco. Which direction are you traveling?',
+              a: 'West', expl: 'New York is on the East Coast and California is on the West Coast — you drive West!' },
+            { q: 'Chicago is EAST of Mount Rushmore. So Mount Rushmore is ___ of Chicago?',
+              a: 'West', expl: 'East and West are opposites — if Chicago is east of Rushmore, Rushmore is west of Chicago!' },
+            { q: 'The sun rises in the morning in the ___. Which direction is that?',
+              a: 'East', expl: 'The sun always rises in the East and sets in the West!' }
+          ]);
+          const dirs = ['North', 'South', 'East', 'West'].filter(d => d !== t.a);
+          return { q: t.q, opts: buildOptions(t.a, dirs), expl: t.expl };
+        }
+      ],
+      Graphs: [
+        function barChart() {
+          const set = pick([
+            { items: ['Bears', 'Bison', 'Elk'] },
+            { items: ['Apples', 'Bananas', 'Oranges'] },
+            { items: ['Cars', 'Trucks', 'Buses'] }
+          ]);
+          const vals = shuffle([10, 20, 30, 40, 50, 60, 70, 80, 90]).slice(0, 3);
+          const data = set.items.map((label, i) => ({ label, val: vals[i] }));
+          const sorted = data.slice().sort((x, y) => x.val - y.val);
+          const mode = pick(['most', 'least', 'diff']);
+          let q, correct, distract, expl;
+          if (mode === 'most') {
+            q = 'Look at the bar chart. Which was counted the MOST?';
+            correct = sorted[2].label;
+            distract = [sorted[0].label, sorted[1].label, 'They are equal'];
+            expl = `The tallest bar is "${sorted[2].label}" with ${sorted[2].val}!`;
+          } else if (mode === 'least') {
+            q = 'Look at the bar chart. Which was counted the LEAST?';
+            correct = sorted[0].label;
+            distract = [sorted[1].label, sorted[2].label, 'They are equal'];
+            expl = `The shortest bar is "${sorted[0].label}" with ${sorted[0].val}!`;
+          } else {
+            const diff = sorted[2].val - sorted[0].val;
+            q = `How many more "${sorted[2].label}" than "${sorted[0].label}" were counted?`;
+            correct = String(diff);
+            distract = [String(diff + 10), String(Math.max(0, diff - 10)), String(diff + 20)];
+            expl = `${sorted[2].val} − ${sorted[0].val} = ${diff}.`;
+          }
+          return { q, opts: buildOptions(correct, distract), expl, isGraph: true, graphData: data };
+        },
+        function pictograph() {
+          const n = pick([2, 5, 10]);
+          const k = 2 + R(4);
+          const total = k * n;
+          const sym = pick(['🚗', '⭐', '📦']);
+          const item = sym === '🚗' ? 'cars' : sym === '⭐' ? 'stars' : 'boxes';
+          return {
+            q: `Each ${sym} stands for ${n} ${item}. The chart shows ${k} symbols. How many ${item} in all?`,
+            opts: buildOptions(String(total), [String(total + n), String(Math.max(n, total - n)), String(total + n * 2)]),
+            expl: `${k} symbols × ${n} = ${total} ${item}!`,
+            isPicto: true, picto: sym.repeat(k)
+          };
+        }
+      ]
+    };
+
+    function makeQuestion(subject) {
+      return pick(QG[subject])();
+    }
+
+    /* ================= Game State ================= */
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
 
-    // Resize canvas dynamically
+    let W = 0, H = 0, horizon = 0;
+    const MAXZ = 140;          // farthest visible distance
+    const SPEEDZ = 1.15;       // world approach speed (per frame)
+
     function resizeCanvas() {
-      canvas.width = canvas.parentElement.clientWidth;
-      canvas.height = canvas.parentElement.clientHeight;
+      W = canvas.width = canvas.parentElement.clientWidth;
+      H = canvas.height = canvas.parentElement.clientHeight;
+      horizon = H * 0.40;
     }
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
 
-    // Game state variables
     let gameRunning = false;
     let inChallenge = false;
     let score = 0;
     let fuel = 100;
     let currentStopIndex = 0;
     let distanceTraveled = 0;
-    const distancePerLeg = 1000; // Distance needed to reach next stop
+    const distancePerLeg = 6000;   // ~25 seconds of driving per leg at 60fps
+    let playerX = 0;               // -1 (left edge) .. 1 (right edge)
+    const PLAYER_SPEED = 0.045;
+    let objects = [];              // roadside + road items in perspective
+    let dashOffset = 0;
+    let spawnTick = 0;
+    let landmarkSide = 1;
+    let clouds = [];
 
-    // Player Car
-    const player = {
-      x: 0,
-      y: 0,
-      width: 40,
-      height: 70,
-      speed: 6,
-      lane: 1 // 0: Left, 1: Middle, 2: Right
-    };
-
-    // Controls
+    // Controls: keyboard + touch
     const keys = { Left: false, Right: false };
     window.addEventListener('keydown', (e) => {
-      if (e.key === 'ArrowLeft' || e.key === 'a') keys.Left = true;
-      if (e.key === 'ArrowRight' || e.key === 'd') keys.Right = true;
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.Left = true;
+      if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.Right = true;
     });
     window.addEventListener('keyup', (e) => {
-      if (e.key === 'ArrowLeft' || e.key === 'a') keys.Left = false;
-      if (e.key === 'ArrowRight' || e.key === 'd') keys.Right = false;
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.Left = false;
+      if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.Right = false;
     });
+    // Touch steering: tap/hold left or right half of the road
+    canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      for (const t of e.changedTouches) {
+        const rect = canvas.getBoundingClientRect();
+        if (t.clientX - rect.left < rect.width / 2) keys.Left = true;
+        else keys.Right = true;
+      }
+    }, { passive: false });
+    const endTouch = (e) => { e.preventDefault(); keys.Left = keys.Right = false; };
+    canvas.addEventListener('touchend', endTouch, { passive: false });
+    canvas.addEventListener('touchcancel', endTouch, { passive: false });
 
-    // Highway Objects
-    let roadItems = [];
-    let roadLinesY = 0;
+    if ('ontouchstart' in window) {
+      document.getElementById('controls-hint').innerText = '👆 Touch & hold LEFT or RIGHT side to steer';
+    }
 
-    // Stops & Challenges (3rd Grade Math, English, Geography, Graphs)
+    // Stops: each leg shows the NEXT stop's landmark approaching on the roadside
     const stops = [
-      { name: "New York City", x: 0 },
-      {
-        name: "Niagara Falls, NY",
-        type: "Math",
-        question: "You need 24 gallons of gas to reach Niagara. If your tank holds 6 gallons, how many full tanks is that?",
-        options: ["3 tanks", "4 tanks", "6 tanks", "8 tanks"],
-        correct: 1,
-        hint: "24 ÷ 6 = ?"
-      },
-      {
-        name: "Chicago, IL",
-        type: "English",
-        question: "Which of these words is a PROPER NOUN that should always be capitalized?",
-        options: ["highway", "car", "Chicago", "driving"],
-        correct: 2,
-        hint: "Proper nouns name specific places, people, or things!"
-      },
-      {
-        name: "Mount Rushmore, SD",
-        type: "Geography",
-        question: "Mount Rushmore features 4 famous US Presidents. Which direction are you traveling to reach California?",
-        options: ["East", "West", "North", "South"],
-        correct: 1,
-        hint: "New York is East, California is West!"
-      },
-      {
-        name: "Yellowstone National Park, WY",
-        type: "Graphs",
-        question: "Look at the animal sightings bar chart. Which animal was spotted the MOST?",
-        isGraph: true,
-        graphData: [{label: "Bears", val: 40}, {label: "Bison", val: 90}, {label: "Elk", val: 60}],
-        options: ["Bears", "Bison", "Elk", "They are equal"],
-        correct: 1,
-        hint: "Find the tallest bar on the chart!"
-      },
-      {
-        name: "Grand Canyon, AZ",
-        type: "Math & Logic",
-        question: "A souvenir postcard costs $3. You give the cashier a $10 bill. How much change do you get back?",
-        options: ["$5", "$6", "$7", "$8"],
-        correct: 2,
-        hint: "$10 - $3 = ?"
-      },
-      { name: "San Francisco, CA", x: 6000 }
+      { name: 'New York City' },
+      { name: 'Niagara Falls, NY', subject: 'Math', landmark: '🌊', scenery: ['🌲', '🏠', '🌳'] },
+      { name: 'Chicago, IL', subject: 'English', landmark: '🏙️', scenery: ['🏠', '🌲', '🏢'] },
+      { name: 'Mount Rushmore, SD', subject: 'Geography', landmark: '🗿', scenery: ['🌲', '⛰️', '🌳'] },
+      { name: 'Yellowstone National Park, WY', subject: 'Graphs', landmark: '🌋', scenery: ['🌲', '⛰️', '🐻'] },
+      { name: 'Grand Canyon, AZ', subject: 'Math', landmark: '🏜️', scenery: ['🌵', '🪨', '🌵'] },
+      { name: 'San Francisco, CA', landmark: '🌉', scenery: ['🌲', '🏠', '🌳'] }
     ];
 
+    /* ================= Perspective helpers ================= */
+    // lane: -1..1 across the road (beyond ±1 = roadside grass)
+    function project(z, lane) {
+      const t = Math.max(0, 1 - z / MAXZ);   // 0 = horizon, 1 = at the car
+      const y = horizon + t * (H - horizon);
+      const half = W * 0.05 + t * (W * 0.45 - W * 0.05);
+      return { x: W / 2 + lane * half, y, s: 0.12 + 0.88 * Math.pow(t, 1.6), t };
+    }
+
+    function drawEmoji(emoji, x, y, size) {
+      ctx.font = `${Math.max(6, Math.round(size))}px "Segoe UI Emoji", "Apple Color Emoji", serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(emoji, x, y);
+    }
+
+    function drawCar(x, y, w) {
+      const h = w * 0.52;
+      // shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.beginPath();
+      ctx.ellipse(x, y + 4, w * 0.48, h * 0.16, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // body
+      ctx.fillStyle = '#ef4444';
+      ctx.beginPath();
+      ctx.roundRect(x - w / 2, y - h, w, h, 10);
+      ctx.fill();
+      // cabin / windshield
+      ctx.fillStyle = '#38bdf8';
+      ctx.beginPath();
+      ctx.roundRect(x - w * 0.32, y - h * 0.94, w * 0.64, h * 0.44, 6);
+      ctx.fill();
+      // wheels
+      ctx.fillStyle = '#111827';
+      const ww = w * 0.14, wh = h * 0.34;
+      ctx.fillRect(x - w / 2 - 2, y - h * 0.82, ww, wh);
+      ctx.fillRect(x + w / 2 - ww + 2, y - h * 0.82, ww, wh);
+      ctx.fillRect(x - w / 2 - 2, y - h * 0.28, ww, wh);
+      ctx.fillRect(x + w / 2 - ww + 2, y - h * 0.28, ww, wh);
+      // headlights
+      ctx.fillStyle = '#fde047';
+      ctx.fillRect(x - w * 0.38, y - h * 0.98, w * 0.16, 5);
+      ctx.fillRect(x + w * 0.22, y - h * 0.98, w * 0.16, 5);
+    }
+
+    function drawBackground() {
+      // sky
+      const sky = ctx.createLinearGradient(0, 0, 0, horizon);
+      sky.addColorStop(0, '#38bdf8');
+      sky.addColorStop(1, '#bae6fd');
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, W, horizon);
+      // sun
+      ctx.fillStyle = '#fde047';
+      ctx.beginPath();
+      ctx.arc(W * 0.82, horizon * 0.35, H * 0.07, 0, Math.PI * 2);
+      ctx.fill();
+      // clouds
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      for (const c of clouds) {
+        ctx.beginPath();
+        ctx.ellipse(c.x, c.y, c.w, c.w * 0.38, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // distant mountains
+      ctx.fillStyle = '#64748b';
+      ctx.beginPath();
+      ctx.moveTo(0, horizon);
+      const peaks = [0.12, 0.3, 0.18, 0.42, 0.25, 0.1, 0.35, 0.22, 0.15];
+      peaks.forEach((p, i) => ctx.lineTo((W / (peaks.length - 1)) * i, horizon - H * p));
+      ctx.lineTo(W, horizon);
+      ctx.closePath();
+      ctx.fill();
+      // ground
+      const gnd = ctx.createLinearGradient(0, horizon, 0, H);
+      gnd.addColorStop(0, '#4ade80');
+      gnd.addColorStop(1, '#15803d');
+      ctx.fillStyle = gnd;
+      ctx.fillRect(0, horizon, W, H - horizon);
+    }
+
+    function drawRoad() {
+      const topHalf = W * 0.05, botHalf = W * 0.45;
+      // asphalt
+      ctx.fillStyle = '#334155';
+      ctx.beginPath();
+      ctx.moveTo(W / 2 - topHalf, horizon);
+      ctx.lineTo(W / 2 + topHalf, horizon);
+      ctx.lineTo(W / 2 + botHalf, H);
+      ctx.lineTo(W / 2 - botHalf, H);
+      ctx.closePath();
+      ctx.fill();
+      // edge lines
+      ctx.strokeStyle = '#f8fafc';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(W / 2 - topHalf, horizon); ctx.lineTo(W / 2 - botHalf, H);
+      ctx.moveTo(W / 2 + topHalf, horizon); ctx.lineTo(W / 2 + botHalf, H);
+      ctx.stroke();
+      // dashed lane dividers in perspective
+      ctx.strokeStyle = '#fde047';
+      for (const laneDiv of [-1 / 3, 1 / 3]) {
+        for (let d = 0; d < MAXZ; d += 16) {
+          let z1 = d + dashOffset, z2 = z1 + 8;
+          if (z2 > MAXZ) continue;
+          const p1 = project(z1, laneDiv), p2 = project(z2, laneDiv);
+          ctx.lineWidth = Math.max(1, 4 * p1.s);
+          ctx.beginPath();
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          ctx.stroke();
+        }
+      }
+    }
+
+    function drawObjects() {
+      // far → near so close objects overlap far ones
+      const sorted = objects.slice().sort((a, b) => b.z - a.z);
+      for (const o of sorted) {
+        const p = project(o.z, o.lane);
+        if (o.kind === 'star') drawEmoji('⭐', p.x, p.y, 46 * p.s);
+        else if (o.kind === 'gas') drawEmoji('⛽', p.x, p.y, 46 * p.s);
+        else if (o.kind === 'cone') drawEmoji('🚧', p.x, p.y, 46 * p.s);
+        else if (o.kind === 'landmark') drawEmoji(o.emoji, p.x, p.y, 130 * p.s);
+        else drawEmoji(o.emoji, p.x, p.y, 64 * p.s); // deco: trees, cacti...
+      }
+    }
+
+    /* ================= Spawning ================= */
+    function spawnObjects() {
+      spawnTick++;
+      // road pickups / hazards in the 3 lanes
+      if (spawnTick % 55 === 0) {
+        objects.push({ kind: pick(['star', 'gas', 'cone', 'star', 'gas']), z: MAXZ, lane: pick([-0.62, 0, 0.62]) });
+      }
+      // ambient roadside scenery for the current leg
+      if (spawnTick % 34 === 0) {
+        const leg = stops[Math.min(currentStopIndex + 1, stops.length - 1)];
+        objects.push({
+          kind: 'deco', emoji: pick(leg.scenery || ['🌲']),
+          z: MAXZ, lane: pick([-1.9, -1.55, 1.55, 1.9])
+        });
+      }
+      // the upcoming stop's landmark, big on the roadside
+      if (spawnTick % 500 === 0) {
+        const leg = stops[Math.min(currentStopIndex + 1, stops.length - 1)];
+        if (leg.landmark) {
+          landmarkSide *= -1;
+          objects.push({ kind: 'landmark', emoji: leg.landmark, z: MAXZ, lane: landmarkSide * 1.75 });
+        }
+      }
+    }
+
+    /* ================= HUD ================= */
+    function updateHUD() {
+      document.getElementById('score').innerText = score;
+      document.getElementById('fuel').innerText = Math.max(0, Math.round(fuel)) + '%';
+      document.getElementById('current-location').innerText = stops[currentStopIndex].name;
+
+      const progressPct = (distanceTraveled / ((stops.length - 1) * distancePerLeg)) * 100;
+      document.getElementById('progress-fill').style.width = Math.min(100, progressPct) + '%';
+
+      const markers = document.querySelectorAll('.city-marker');
+      markers.forEach((m, idx) => {
+        if (idx === currentStopIndex) m.classList.add('active');
+        else m.classList.remove('active');
+      });
+    }
+
+    /* ================= Game flow ================= */
     function startGame() {
       document.getElementById('start-overlay').classList.add('hidden');
       resetGameState();
@@ -407,9 +809,14 @@
       currentStopIndex = 0;
       distanceTraveled = 0;
       inChallenge = false;
-      roadItems = [];
-      player.x = canvas.width / 2 - player.width / 2;
-      player.y = canvas.height - player.height - 20;
+      objects = [];
+      playerX = 0;
+      dashOffset = 0;
+      spawnTick = 0;
+      clouds = [];
+      for (let i = 0; i < 3; i++) {
+        clouds.push({ x: R(W), y: H * 0.08 + R(Math.floor(H * 0.18)), w: 34 + R(30) });
+      }
       updateHUD();
     }
 
@@ -418,98 +825,60 @@
       startGame();
     }
 
-    // Spawn fuel cans and stars on road
-    function spawnRoadItems() {
-      if (Math.random() < 0.03) {
-        const laneX = [
-          canvas.width * 0.28,
-          canvas.width * 0.48,
-          canvas.width * 0.68
-        ];
-        const randomLane = laneX[Math.floor(Math.random() * laneX.length)];
-        const types = ['star', 'gas', 'cone'];
-        const type = types[Math.floor(Math.random() * types.length)];
-
-        roadItems.push({
-          x: randomLane,
-          y: -50,
-          type: type,
-          size: 30
-        });
-      }
-    }
-
-    function updateHUD() {
-      document.getElementById('score').innerText = score;
-      document.getElementById('fuel').innerText = Math.max(0, Math.round(fuel)) + '%';
-      document.getElementById('current-location').innerText = stops[currentStopIndex].name;
-
-      const progressPct = (distanceTraveled / ((stops.length - 1) * distancePerLeg)) * 100;
-      document.getElementById('progress-fill').style.width = Math.min(100, progressPct) + '%';
-
-      // Highlight active city
-      const markers = document.querySelectorAll('.city-marker');
-      markers.forEach((m, idx) => {
-        if (idx === currentStopIndex) m.classList.add('active');
-        else m.classList.remove('active');
-      });
-    }
-
-    // Driving Game Loop
+    // Driving Game Loop — landscape perspective view
     function gameLoop() {
       if (!gameRunning || inChallenge) return;
 
-      // Clear Canvas
-      ctx.fillStyle = '#15803d'; // Grass sides
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      drawBackground();
+      drawRoad();
 
-      // Draw Road
-      const roadWidth = canvas.width * 0.6;
-      const roadLeft = (canvas.width - roadWidth) / 2;
-      ctx.fillStyle = '#334155';
-      ctx.fillRect(roadLeft, 0, roadWidth, canvas.height);
+      // steering
+      if (keys.Left) playerX -= PLAYER_SPEED;
+      if (keys.Right) playerX += PLAYER_SPEED;
+      playerX = Math.max(-1, Math.min(1, playerX));
 
-      // Draw Moving Road Lines
-      ctx.strokeStyle = '#fde047';
-      ctx.lineWidth = 4;
-      ctx.setLineDash([20, 20]);
-      ctx.lineDashOffset = -roadLinesY;
-      roadLinesY += 8;
+      // advance world
+      dashOffset = (dashOffset + SPEEDZ) % 16;
+      for (const c of clouds) {
+        c.x -= 0.25;
+        if (c.x < -60) { c.x = W + 60; c.y = H * 0.08 + R(Math.floor(H * 0.18)); }
+      }
 
-      ctx.beginPath();
-      ctx.moveTo(roadLeft + roadWidth / 3, 0);
-      ctx.lineTo(roadLeft + roadWidth / 3, canvas.height);
-      ctx.moveTo(roadLeft + (roadWidth * 2) / 3, 0);
-      ctx.lineTo(roadLeft + (roadWidth * 2) / 3, canvas.height);
-      ctx.stroke();
-      ctx.setLineDash([]); // Reset dash
+      spawnObjects();
+      for (let i = objects.length - 1; i >= 0; i--) {
+        const o = objects[i];
+        o.z -= SPEEDZ;
+        if (o.z < 3) { objects.splice(i, 1); continue; }
+        // collision near the car
+        const p = project(o.z, o.lane);
+        if ((o.kind === 'star' || o.kind === 'gas' || o.kind === 'cone') &&
+            p.t > 0.8 && Math.abs(o.lane - playerX) < 0.3) {
+          if (o.kind === 'star') score += 25;
+          else if (o.kind === 'gas') fuel = Math.min(100, fuel + 20);
+          else if (o.kind === 'cone') {
+            score = Math.max(0, score - 15);
+            fuel = Math.max(0, fuel - 5);
+          }
+          objects.splice(i, 1);
+          updateHUD();
+        }
+      }
+      drawObjects();
 
-      // Player Movement
-      if (keys.Left && player.x > roadLeft + 10) player.x -= player.speed;
-      if (keys.Right && player.x < roadLeft + roadWidth - player.width - 10) player.x += player.speed;
+      // player car
+      const carX = W / 2 + playerX * W * 0.45 * 0.9;
+      drawCar(carX, H - 26, Math.min(110, W * 0.14));
 
-      // Draw Player Car
-      ctx.fillStyle = '#ef4444'; // Red Sports Car
-      ctx.beginPath();
-      ctx.roundRect(player.x, player.y, player.width, player.height, 8);
-      ctx.fill();
-      // Windshield & Details
-      ctx.fillStyle = '#38bdf8';
-      ctx.fillRect(player.x + 5, player.y + 15, player.width - 10, 15);
-      ctx.fillStyle = '#000';
-      ctx.fillRect(player.x + 2, player.y + 5, 6, 12);
-      ctx.fillRect(player.x + player.width - 8, player.y + 5, 6, 12);
-
-      // Distance & Fuel Consumption
+      // distance & fuel — a full tank lasts ~2 legs, so fuel cans matter
       distanceTraveled += 4;
       fuel -= 0.03;
 
       if (fuel <= 0) {
-        fuel = 20; // Refuel safety bump
+        fuel = 25; // roadside assistance!
         score = Math.max(0, score - 10);
       }
 
-      // Check for stop triggers
+      // stop triggers
       const targetDistance = (currentStopIndex + 1) * distancePerLeg;
       if (distanceTraveled >= targetDistance && currentStopIndex < stops.length - 2) {
         triggerPitstop();
@@ -519,116 +888,77 @@
         return;
       }
 
-      // Spawn & Update Road Items
-      spawnRoadItems();
-      for (let i = roadItems.length - 1; i >= 0; i--) {
-        let item = roadItems[i];
-        item.y += 5;
-
-        // Draw Items
-        if (item.type === 'star') {
-          ctx.fillStyle = '#f59e0b';
-          ctx.beginPath();
-          ctx.arc(item.x, item.y, 14, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = '#fff';
-          ctx.font = '12px sans-serif';
-          ctx.fillText('⭐', item.x - 7, item.y + 4);
-        } else if (item.type === 'gas') {
-          ctx.fillStyle = '#10b981';
-          ctx.fillRect(item.x - 12, item.y - 12, 24, 24);
-          ctx.fillStyle = '#fff';
-          ctx.font = '12px sans-serif';
-          ctx.fillText('⛽', item.x - 7, item.y + 4);
-        } else if (item.type === 'cone') {
-          ctx.fillStyle = '#f97316';
-          ctx.beginPath();
-          ctx.moveTo(item.x, item.y - 14);
-          ctx.lineTo(item.x - 12, item.y + 12);
-          ctx.lineTo(item.x + 12, item.y + 12);
-          ctx.closePath();
-          ctx.fill();
-        }
-
-        // Collision Detection
-        if (
-          player.x < item.x + 15 &&
-          player.x + player.width > item.x - 15 &&
-          player.y < item.y + 15 &&
-          player.y + player.height > item.y - 15
-        ) {
-          if (item.type === 'star') {
-            score += 25;
-          } else if (item.type === 'gas') {
-            fuel = Math.min(100, fuel + 20);
-          } else if (item.type === 'cone') {
-            score = Math.max(0, score - 15);
-            fuel = Math.max(0, fuel - 5);
-          }
-          roadItems.splice(i, 1);
-          updateHUD();
-        } else if (item.y > canvas.height + 50) {
-          roadItems.splice(i, 1);
-        }
-      }
-
       updateHUD();
       requestAnimationFrame(gameLoop);
     }
 
-    // Pitstop / Learning Challenge Logic
+    /* ================= Pitstop challenges ================= */
     function triggerPitstop() {
       inChallenge = true;
       currentStopIndex++;
       const stop = stops[currentStopIndex];
+      const q = makeQuestion(stop.subject);
 
-      document.getElementById('stop-title').innerText = `📍 Arrival: ${stop.name} (${stop.type} Challenge)`;
+      document.getElementById('stop-title').innerText = `📍 Arrival: ${stop.name} (${stop.subject} Challenge)`;
+      document.getElementById('quiz-part').classList.remove('hidden');
+      document.getElementById('feedback-part').classList.add('hidden');
+      document.getElementById('feedback-part').style.display = 'none';
 
       const qCard = document.getElementById('question-card');
-      let htmlContent = `<p style="font-size: 1.2rem; font-weight: bold; margin-bottom: 10px;">${stop.question}</p>`;
-
-      // Render Bar Graph if question requires it
-      if (stop.isGraph) {
-        htmlContent += `<div class="graph-container">`;
-        stop.graphData.forEach(g => {
-          htmlContent += `
+      let html = `<p style="font-size: 1.2rem; font-weight: bold; margin-bottom: 10px;">${q.q}</p>`;
+      if (q.isGraph) {
+        html += `<div class="graph-container">`;
+        for (const g of q.graphData) {
+          html += `
             <div class="bar-group">
               <span style="font-size:0.75rem;">${g.val}</span>
               <div class="bar" style="height: ${g.val}%;"></div>
               <span class="bar-label">${g.label}</span>
-            </div>
-          `;
-        });
-        htmlContent += `</div>`;
+            </div>`;
+        }
+        html += `</div>`;
       }
+      if (q.isPicto) {
+        html += `<div class="picto-row">${q.picto}</div>`;
+      }
+      qCard.innerHTML = html;
 
-      qCard.innerHTML = htmlContent;
-
-      // Load Options
       const optGrid = document.getElementById('options-grid');
       optGrid.innerHTML = '';
-      stop.options.forEach((opt, idx) => {
+      q.opts.forEach((opt) => {
         const btn = document.createElement('button');
         btn.className = 'option-btn';
-        btn.innerText = opt;
-        btn.onclick = () => answerChallenge(idx === stop.correct);
+        btn.innerText = opt.t;
+        btn.onclick = () => answerChallenge(opt.ok, q.expl);
         optGrid.appendChild(btn);
       });
 
       document.getElementById('challenge-overlay').classList.remove('hidden');
+      updateHUD();
     }
 
-    function answerChallenge(isCorrect) {
+    function answerChallenge(isCorrect, expl) {
+      const card = document.getElementById('feedback-card');
       if (isCorrect) {
         score += 100;
-        fuel = 100; // Refuel bonus!
-        alert("🎉 Correct! Refueling complete (+100 pts)!");
+        fuel = 100; // full refuel bonus!
+        document.getElementById('feedback-title').innerText = '🎉 Correct! +100 pts';
+        card.className = 'feedback-card correct';
       } else {
         score = Math.max(0, score - 20);
         fuel = Math.min(100, fuel + 50);
-        alert("❌ Not quite! But you got enough gas to keep moving!");
+        document.getElementById('feedback-title').innerText = '❌ Not quite — good try!';
+        card.className = 'feedback-card wrong';
       }
+      document.getElementById('feedback-expl').innerText = '💡 ' + expl;
+      document.getElementById('quiz-part').classList.add('hidden');
+      const fb = document.getElementById('feedback-part');
+      fb.classList.remove('hidden');
+      fb.style.display = 'flex';
+      updateHUD();
+    }
 
+    function resumeDrive() {
       document.getElementById('challenge-overlay').classList.add('hidden');
       inChallenge = false;
       requestAnimationFrame(gameLoop);

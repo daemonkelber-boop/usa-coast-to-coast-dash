@@ -33,14 +33,23 @@ usa-coast-to-coast-dash/
 └── README.md
 ```
 
-## Editing the quiz questions
+## Questions: infinite generator
 
-Open `game/index.html` and find the `stops` array in the `<script>` section. Each stop
-has a `question`, an `options` list, and a `correct` index. The Yellowstone stop also
-shows how to add a bar-graph question (`isGraph: true` + `graphData`).
+Quiz questions are **generated fresh every run** by the built-in generator in
+`game/index.html` (the `QG` object in the `<script>` section) — no API key, no
+internet needed, and kid-safe by design. Each stop has a subject (Math,
+English, Geography, Graphs) and the generator picks a random template with
+randomized numbers, words, and charts.
+
+To add a new question template, add a function to the right subject array in
+`QG`. Each function returns `{ q, opts, expl }` where `opts` comes from the
+`buildOptions(correctText, distractTexts)` helper (it guarantees 4 distinct
+options with one correct answer, shuffled).
 
 ## Controls
 
 - ⬅️ ➡️ arrow keys (or A/D) to steer — click inside the game first so it has keyboard focus
-- ⭐ star coin: +25 pts · ⛽ fuel can: +20% fuel · 🚧 cone: −15 pts, −5% fuel
-- Correct quiz answer: +100 pts and a full refuel
+- 👆 touch: press and hold the LEFT or RIGHT half of the road to steer
+- ⭐ star: +25 pts · ⛽ fuel can: +20% fuel · 🚧 cone: −15 pts, −5% fuel
+- Correct quiz answer: +100 pts and a full refuel · wrong answer: −20 pts, +50% fuel
+- Landmarks (🌊 🏙️ 🗿 🌋 🏜️ 🌉) appear on the roadside as you approach each stop
