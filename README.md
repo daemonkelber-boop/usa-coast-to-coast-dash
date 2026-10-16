@@ -1,12 +1,16 @@
 # 🏎️ USA Coast-to-Coast Dash!
 
-An educational driving game for 3rd graders. Drive from **New York City to San Francisco**,
-collecting stars and fuel on the highway, and solve fun Math, English, Geography, and Graph
-challenges at each famous stop (Niagara Falls, Chicago, Mount Rushmore, Yellowstone,
-Grand Canyon).
+An educational driving game for 3rd graders. **Choose your own road trip** on the
+US map — tap any start city and any end city, and the game builds the route,
+pit stops, roadside landmarks, and fresh quiz questions for that exact trip.
+
+Drive in a landscape view past real landmarks, collecting stars and fuel on the
+highway, and solve **brand-new** Math, English, Geography, and Graph challenges
+at every stop (questions are generated fresh every run — see below).
 
 Built with a self-contained HTML/JS game (`game/index.html`) embedded in a
-[Streamlit](https://streamlit.io) app (`app.py`).
+[Streamlit](https://streamlit.io) app (`app.py`). Also playable directly via
+GitHub Pages.
 
 ## Run it locally
 
@@ -33,7 +37,22 @@ usa-coast-to-coast-dash/
 └── README.md
 ```
 
-## Questions: infinite generator
+## Choose-your-own-route
+
+The trip starts on a clickable US map (`#route-overlay` in `game/index.html`):
+tap a start city 🟢 then an end city 🏁 (or hit 🎲 Surprise Me). `buildRoute()`
+finds cities along the start→end corridor, orders them geographically, and
+assigns quiz subjects (Math → English → Geography → Graphs) to the stops.
+`buildRouteCtx()` then feeds the actual city names, states, landmarks, and the
+trip's compass direction into the question generator — so Geography questions
+ask about *your* route's capitals and landmarks, and Math/English questions
+name *your* stops.
+
+To add a city, add an entry to the `CITIES` array (name, state, x/y on the
+0–100 map grid, landmark emoji, scenery). To tweak routing, see the corridor
+/ detour logic in `buildRoute()`.
+
+## Infinite question generator
 
 Quiz questions are **generated fresh every run** by the built-in generator in
 `game/index.html` (the `QG` object in the `<script>` section) — no API key, no

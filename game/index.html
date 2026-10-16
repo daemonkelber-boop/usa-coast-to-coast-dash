@@ -134,6 +134,19 @@
       transform: scale(1.05);
     }
 
+    .btn:disabled {
+      background: #475569;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .btn-secondary {
+      background: #4338ca;
+    }
+    .btn-secondary:hover {
+      background: #4f46e5;
+    }
+
     /* Quiz / Question UI */
     .question-card {
       background: var(--card);
@@ -236,6 +249,40 @@
       font-size: 1.05rem;
     }
 
+    /* Route selection map */
+    #route-overlay {
+      justify-content: flex-start;
+      padding: 16px;
+    }
+
+    #map-wrap {
+      width: 100%;
+      max-width: 700px;
+      background: #0b3b5e;
+      border-radius: 12px;
+      border: 2px solid #4f46e5;
+      overflow: hidden;
+      cursor: pointer;
+    }
+
+    #mapCanvas {
+      width: 100%;
+      height: 300px;
+    }
+
+    #route-status {
+      margin: 10px 0 14px 0;
+      font-size: 1.05rem;
+      min-height: 1.6em;
+    }
+
+    .route-btn-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
     /* Progress Tracker */
     .progress-bar-container {
       width: 100%;
@@ -258,6 +305,12 @@
       font-size: 0.8rem;
       background: #0f172a;
       color: #94a3b8;
+      gap: 4px;
+      overflow-x: auto;
+    }
+
+    .city-marker {
+      white-space: nowrap;
     }
 
     .city-marker.active {
@@ -285,7 +338,7 @@
   <div id="game-container">
     <!-- Header HUD -->
     <div class="hud">
-      <div class="hud-item">📍 <span id="current-location" class="badge">New York City</span></div>
+      <div class="hud-item">📍 <span id="current-location" class="badge">Choose a trip!</span></div>
       <div class="hud-item">⭐ Score: <span id="score" class="badge">0</span></div>
       <div class="hud-item">⛽ Fuel: <span id="fuel" class="badge">100%</span></div>
     </div>
@@ -295,11 +348,16 @@
       <canvas id="gameCanvas"></canvas>
       <div id="controls-hint" class="controls-hint">⬅️ Use LEFT / RIGHT arrows or A/D to steer ➡️</div>
 
-      <!-- Start Screen -->
-      <div id="start-overlay" class="overlay">
-        <h1>🏎️ USA Coast-to-Coast Dash!</h1>
-        <p>Drive from <strong>New York to San Francisco</strong>! Cruise past real landmarks, collect stars and gas, dodge cones — and solve <strong>brand-new</strong> Math, English, Geography &amp; Graph challenges at every stop!</p>
-        <button class="btn" onclick="startGame()">Start Road Trip!</button>
+      <!-- Route Selection Screen -->
+      <div id="route-overlay" class="overlay">
+        <h1>🗺️ Choose Your Road Trip!</h1>
+        <p style="margin-bottom:10px;">Tap a city to <strong style="color:#10b981;">START</strong>, then tap where you want to <strong style="color:#ef4444;">FINISH</strong>!</p>
+        <div id="map-wrap"><canvas id="mapCanvas"></canvas></div>
+        <div id="route-status">Pick your starting city 🟢</div>
+        <div class="route-btn-row">
+          <button class="btn btn-secondary" onclick="surpriseRoute()">🎲 Surprise Me!</button>
+          <button class="btn" id="start-trip-btn" onclick="startRoadTrip()" disabled>Start Road Trip! 🚗</button>
+        </div>
       </div>
 
       <!-- Stop Challenge Overlay -->
@@ -320,10 +378,10 @@
 
       <!-- Victory Screen -->
       <div id="victory-overlay" class="overlay hidden">
-        <h1>🎉 You Reached San Francisco!</h1>
-        <p>Incredible driving and smart thinking! You crossed the entire United States!</p>
+        <h1 id="victory-title">🎉 You Made It!</h1>
+        <p id="victory-text">Incredible driving and smart thinking! You crossed the country!</p>
         <h2 style="color: #10b981;">Final Score: <span id="final-score">0</span></h2>
-        <button class="btn" onclick="resetGame()">Play Again</button>
+        <button class="btn" onclick="resetGame()">Plan Another Trip 🗺️</button>
       </div>
     </div>
 
@@ -331,15 +389,7 @@
     <div class="progress-bar-container">
       <div id="progress-fill" class="progress-fill"></div>
     </div>
-    <div class="city-markers" id="city-markers">
-      <span class="city-marker active">NYC</span>
-      <span class="city-marker">Niagara</span>
-      <span class="city-marker">Chicago</span>
-      <span class="city-marker">Rushmore</span>
-      <span class="city-marker">Yellowstone</span>
-      <span class="city-marker">Grand Canyon</span>
-      <span class="city-marker">SF</span>
-    </div>
+    <div class="city-markers" id="city-markers"></div>
   </div>
 
   <script>
@@ -365,8 +415,7 @@
       }
       let n = 1;
       while (opts.length < 4) {
-        const f = correctText + ' *';
-        const g = n === 1 ? f : f + n;
+        const g = correctText + ' *' + (n === 1 ? '' : n);
         if (!seen.has(g)) { seen.add(g); opts.push({ t: g, ok: false }); }
         n++;
         if (n > 20) break; // safety, should never happen
@@ -374,15 +423,126 @@
       return shuffle(opts);
     }
 
+    /* ================= Cities & Map Data =================
+       x/y on a 0–100 grid: x = west→east, y = north→south */
+    const CITIES = [
+      { name: 'Seattle, WA', city: 'Seattle', state: 'Washington', short: 'Seattle', x: 13, y: 10, landmark: '🌲', landmarkName: 'Space Needle', scenery: ['🌲', '⛰️', '🌳'] },
+      { name: 'San Francisco, CA', city: 'San Francisco', state: 'California', short: 'SF', x: 9, y: 40, landmark: '🌉', landmarkName: 'Golden Gate Bridge', scenery: ['🌲', '🏠', '🌳'] },
+      { name: 'Los Angeles, CA', city: 'Los Angeles', state: 'California', short: 'LA', x: 13, y: 54, landmark: '🎬', landmarkName: 'Hollywood Sign', scenery: ['🌴', '🏠', '🌳'] },
+      { name: 'Denver, CO', city: 'Denver', state: 'Colorado', short: 'Denver', x: 33, y: 47, landmark: '⛰️', landmarkName: 'Rocky Mountains', scenery: ['⛰️', '🌲', '🌳'] },
+      { name: 'Yellowstone NP, WY', city: 'Yellowstone', state: 'Wyoming', short: 'Yellowstone', x: 29, y: 31, landmark: '🌋', landmarkName: 'Old Faithful', scenery: ['🌲', '⛰️', '🐻'] },
+      { name: 'Mount Rushmore, SD', city: 'Mount Rushmore', state: 'South Dakota', short: 'Rushmore', x: 43, y: 29, landmark: '🗿', landmarkName: 'Mount Rushmore', scenery: ['🌲', '⛰️', '🌳'] },
+      { name: 'Grand Canyon, AZ', city: 'Grand Canyon', state: 'Arizona', short: 'Grand Canyon', x: 23, y: 57, landmark: '🏜️', landmarkName: 'Grand Canyon', scenery: ['🌵', '🪨', '🌵'] },
+      { name: 'Chicago, IL', city: 'Chicago', state: 'Illinois', short: 'Chicago', x: 63, y: 33, landmark: '🏙️', landmarkName: 'Willis Tower', scenery: ['🏠', '🏢', '🌲'] },
+      { name: 'New Orleans, LA', city: 'New Orleans', state: 'Louisiana', short: 'New Orleans', x: 63, y: 71, landmark: '🎷', landmarkName: 'French Quarter', scenery: ['🌳', '🏠', '🌳'] },
+      { name: 'Houston, TX', city: 'Houston', state: 'Texas', short: 'Houston', x: 54, y: 67, landmark: '🤠', landmarkName: 'Space Center', scenery: ['🌵', '🏠', '🌳'] },
+      { name: 'Niagara Falls, NY', city: 'Niagara Falls', state: 'New York', short: 'Niagara', x: 81, y: 27, landmark: '🌊', landmarkName: 'Niagara Falls', scenery: ['🌲', '🏠', '🌳'] },
+      { name: 'New York City, NY', city: 'New York City', state: 'New York', short: 'NYC', x: 87, y: 35, landmark: '🗽', landmarkName: 'Statue of Liberty', scenery: ['🏢', '🏠', '🌲'] },
+      { name: 'Miami, FL', city: 'Miami', state: 'Florida', short: 'Miami', x: 80, y: 81, landmark: '🏖️', landmarkName: 'South Beach', scenery: ['🌴', '🌊', '🌴'] },
+      { name: 'Atlanta, GA', city: 'Atlanta', state: 'Georgia', short: 'Atlanta', x: 73, y: 61, landmark: '🍑', landmarkName: 'Stone Mountain', scenery: ['🌳', '🏠', '🌳'] }
+    ];
+
+    const STATE_CAPITALS = {
+      'Washington': 'Olympia', 'California': 'Sacramento', 'Colorado': 'Denver',
+      'Wyoming': 'Cheyenne', 'South Dakota': 'Pierre', 'Arizona': 'Phoenix',
+      'Illinois': 'Springfield', 'Louisiana': 'Baton Rouge', 'Texas': 'Austin',
+      'New York': 'Albany', 'Florida': 'Tallahassee', 'Georgia': 'Atlanta'
+    };
+
+    // Simplified continental-US outline (0–100 grid)
+    const USA_OUTLINE = [
+      [10,10],[22,8],[36,9],[50,10],[62,11],[72,13],[80,15],[88,12],[95,15],
+      [94,22],[91,30],[88,36],[89,44],[87,52],[85,60],[83,68],[81,74],
+      [81,80],[79,84],[77,80],[76,74],
+      [70,72],[64,73],[58,71],[52,70],[46,68],[40,66],[33,63],[26,61],[18,60],[14,60],
+      [11,54],[9,48],[8,42],[9,34],[10,26],[10,18]
+    ];
+    const GREAT_LAKES = [[74, 20, 7, 4], [78, 23, 5, 3.4], [71, 25, 5, 3]];
+
+    const SUBJECTS = ['Math', 'English', 'Geography', 'Graphs'];
+
+    /* ================= Route building ================= */
+    let stops = [];       // built from the chosen start/end
+    let routeCtx = null;  // location-aware context for the question generator
+
+    function tripDirection(a, b) {
+      const dx = b.x - a.x, dy = b.y - a.y;
+      if (Math.abs(dx) >= Math.abs(dy)) return dx > 0 ? 'East' : 'West';
+      return dy > 0 ? 'South' : 'North';
+    }
+
+    function buildRoute(startIdx, endIdx) {
+      const A = CITIES[startIdx], B = CITIES[endIdx];
+      const dx = B.x - A.x, dy = B.y - A.y;
+      const len2 = dx * dx + dy * dy;
+      const routeLen = Math.hypot(dx, dy);
+      const maxDetour = Math.max(18, routeLen * 0.45); // detours scale with trip length
+      const proj = (C) => {
+        const t = ((C.x - A.x) * dx + (C.y - A.y) * dy) / len2;
+        const px = A.x + t * dx, py = A.y + t * dy;
+        return { t, dist: Math.hypot(C.x - px, C.y - py) };
+      };
+      let cands = [];
+      for (let i = 0; i < CITIES.length; i++) {
+        if (i === startIdx || i === endIdx) continue;
+        const p = proj(CITIES[i]);
+        if (p.t > 0.05 && p.t < 0.95) cands.push({ i, t: p.t, dist: p.dist });
+      }
+      cands.sort((a, b) => a.t - b.t);
+      let corridor = cands.filter(c => c.dist < Math.min(24, maxDetour));
+      if (corridor.length === 0) {
+        // fallback: nearest cities to the route midpoint, within the detour budget
+        const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2;
+        corridor = CITIES
+          .map((c, i) => ({ i, t: proj(c).t, d: Math.hypot(c.x - mx, c.y - my) }))
+          .filter(o => o.i !== startIdx && o.i !== endIdx && o.d < maxDetour)
+          .sort((a, b) => a.d - b.d)
+          .slice(0, 2);
+      }
+      const n = Math.min(4, corridor.length);
+      const pickedIdx = new Set();
+      for (let k = 0; k < n; k++) {
+        const j = n === 1 ? 0 : Math.round(k * (corridor.length - 1) / (n - 1));
+        pickedIdx.add(corridor[j].i);
+      }
+      const mid = [...pickedIdx]
+        .map(i => ({ i, t: proj(CITIES[i]).t }))
+        .sort((a, b) => a.t - b.t)
+        .map(o => o.i);
+      const order = [startIdx, ...mid, endIdx];
+      return order.map((ci, k) => Object.assign({}, CITIES[ci], {
+        subject: (k === 0 || k === order.length - 1) ? null : SUBJECTS[(k - 1) % SUBJECTS.length]
+      }));
+    }
+
+    function buildRouteCtx(stopsArr) {
+      const a = stopsArr[0], b = stopsArr[stopsArr.length - 1];
+      const landmarkPool = CITIES.map(c => ({ lm: c.landmarkName, st: c.state }));
+      const routeLandmarks = stopsArr.map(s => ({ lm: s.landmarkName, st: s.state }));
+      // pad with other landmarks so there are always enough distractors
+      for (const L of landmarkPool) {
+        if (routeLandmarks.length >= 6) break;
+        if (!routeLandmarks.some(r => r.lm === L.lm)) routeLandmarks.push(L);
+      }
+      return {
+        names: stopsArr.map(s => s.name),
+        cityNames: stopsArr.map(s => s.city),
+        states: [...new Set(stopsArr.map(s => s.state))],
+        landmarks: routeLandmarks,
+        direction: tripDirection(a, b),
+        startName: a.name,
+        endName: b.name
+      };
+    }
+
     /* ================= Infinite Question Generator =================
        Fresh, curriculum-safe 3rd-grade questions every run — no API,
-       no internet, no repeats. Each generator returns:
-       { q, opts:[{t, ok}], expl, isGraph?, graphData?, isPicto?, picto? } */
+       no internet, no repeats. Generators marked (ctx) use the route. */
     const QG = {
       Math: [
-        function division() {
+        function division(ctx) {
           const b = 2 + R(8), c = 2 + R(8), a = b * c;
-          const place = pick(['Niagara Falls', 'Chicago', 'Yellowstone', 'the Grand Canyon']);
+          const place = pick(ctx.names);
           const d = [];
           if (c > 1) d.push(String(c - 1));
           d.push(String(c + 1), String(c + 2), String(c + 3));
@@ -392,10 +552,11 @@
             expl: `${a} ÷ ${b} = ${c}. You'll need ${c} full tanks!`
           };
         },
-        function multiplication() {
+        function multiplication(ctx) {
           const m = 2 + R(7), n = 2 + R(7), a = m * n;
+          const place = pick(ctx.names);
           return {
-            q: `Each gift box holds ${n} postcards. You buy ${m} boxes. How many postcards is that?`,
+            q: `Near ${place}, each gift box holds ${n} postcards. You buy ${m} boxes. How many postcards is that?`,
             opts: buildOptions(String(a), [String(a + m), String(a - m), String(a + n), String(a - n), String(a + 10)]),
             expl: `${m} × ${n} = ${a}. That's ${a} postcards!`
           };
@@ -423,11 +584,11 @@
         }
       ],
       English: [
-        function properNoun() {
-          const proper = pick(['Chicago', 'Niagara Falls', 'Yellowstone', 'Grand Canyon', 'San Francisco', 'Mount Rushmore']);
+        function properNoun(ctx) {
+          const proper = pick(ctx.cityNames);
           const commons = shuffle(['highway', 'car', 'river', 'mountain', 'city', 'park', 'bridge', 'desert']).slice(0, 3);
           return {
-            q: 'Which word is a PROPER NOUN — a name for a specific place?',
+            q: 'Which word is a PROPER NOUN — a name for a specific place on your trip?',
             opts: buildOptions(proper, commons),
             expl: `"${proper}" names one specific place, so it's a proper noun and starts with a capital letter!`
           };
@@ -443,7 +604,7 @@
         },
         function spelling() {
           const s = pick([
-            { sent: '___ going to love the Grand Canyon!', ans: "They're", expl: `"They're" means "they are" — THEY'RE going to love it!` },
+            { sent: '___ going to love this road trip!', ans: "They're", expl: `"They're" means "they are" — THEY'RE going to love it!` },
             { sent: 'The bison left ___ footprints by the river.', ans: 'Their', expl: `"Their" shows belonging — the footprints belong to the bison.` },
             { sent: 'Park your car over ___ by the big tree.', ans: 'There', expl: `"There" tells WHERE — over THERE by the tree.` }
           ]);
@@ -469,35 +630,30 @@
         }
       ],
       Geography: [
-        function capital() {
-          const pairs = [['New York', 'Albany'], ['California', 'Sacramento'], ['Illinois', 'Springfield'],
-                         ['South Dakota', 'Pierre'], ['Wyoming', 'Cheyenne'], ['Arizona', 'Phoenix'],
-                         ['Texas', 'Austin'], ['Colorado', 'Denver'], ['Florida', 'Tallahassee']];
-          const [st, cap] = pick(pairs);
-          const others = pairs.filter(p => p[1] !== cap).map(p => p[1]);
+        function capital(ctx) {
+          const st = pick(ctx.states);
+          const cap = STATE_CAPITALS[st];
+          const others = Object.values(STATE_CAPITALS).filter(c => c !== cap);
           return {
             q: `What is the capital of ${st}?`,
             opts: buildOptions(cap, others),
             expl: `${cap} is the capital of ${st}!`
           };
         },
-        function landmarkState() {
-          const items = [['Grand Canyon', 'Arizona'], ['Yellowstone', 'Wyoming'], ['Mount Rushmore', 'South Dakota'],
-                         ['Niagara Falls', 'New York'], ['Golden Gate Bridge', 'California']];
-          const [lm, st] = pick(items);
-          const others = items.filter(x => x[1] !== st).map(x => x[1]);
+        function landmarkState(ctx) {
+          const item = pick(ctx.landmarks);
+          const others = ctx.landmarks.filter(x => x.st !== item.st).map(x => x.st);
           return {
-            q: `The ${lm} is in which state?`,
-            opts: buildOptions(st, others),
-            expl: `The ${lm} is in ${st} — you may have just driven past it!`
+            q: `The ${item.lm} is in which state?`,
+            opts: buildOptions(item.st, others),
+            expl: `The ${item.lm} is in ${item.st} — you may have just driven past it!`
           };
         },
-        function direction() {
+        function direction(ctx) {
           const t = pick([
-            { q: 'You are driving from New York City all the way to San Francisco. Which direction are you traveling?',
-              a: 'West', expl: 'New York is on the East Coast and California is on the West Coast — you drive West!' },
-            { q: 'Chicago is EAST of Mount Rushmore. So Mount Rushmore is ___ of Chicago?',
-              a: 'West', expl: 'East and West are opposites — if Chicago is east of Rushmore, Rushmore is west of Chicago!' },
+            { q: `You are driving from ${ctx.startName} all the way to ${ctx.endName}. Which direction are you traveling?`,
+              a: ctx.direction,
+              expl: `Look at your map — ${ctx.startName.split(',')[0]} to ${ctx.endName.split(',')[0]} heads ${ctx.direction}!` },
             { q: 'The sun rises in the morning in the ___. Which direction is that?',
               a: 'East', expl: 'The sun always rises in the East and sets in the West!' }
           ]);
@@ -553,16 +709,18 @@
     };
 
     function makeQuestion(subject) {
-      return pick(QG[subject])();
+      return pick(QG[subject])(routeCtx);
     }
 
     /* ================= Game State ================= */
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
+    const mapCanvas = document.getElementById('mapCanvas');
+    const mctx = mapCanvas.getContext('2d');
 
     let W = 0, H = 0, horizon = 0;
-    const MAXZ = 140;          // farthest visible distance
-    const SPEEDZ = 1.15;       // world approach speed (per frame)
+    const MAXZ = 140;
+    const SPEEDZ = 1.15;
 
     function resizeCanvas() {
       W = canvas.width = canvas.parentElement.clientWidth;
@@ -570,7 +728,7 @@
       horizon = H * 0.40;
     }
     resizeCanvas();
-    window.addEventListener('resize', resizeCanvas);
+    window.addEventListener('resize', () => { resizeCanvas(); drawMap(); });
 
     let gameRunning = false;
     let inChallenge = false;
@@ -578,10 +736,10 @@
     let fuel = 100;
     let currentStopIndex = 0;
     let distanceTraveled = 0;
-    const distancePerLeg = 6000;   // ~25 seconds of driving per leg at 60fps
-    let playerX = 0;               // -1 (left edge) .. 1 (right edge)
+    const distancePerLeg = 6000;
+    let playerX = 0;
     const PLAYER_SPEED = 0.045;
-    let objects = [];              // roadside + road items in perspective
+    let objects = [];
     let dashOffset = 0;
     let spawnTick = 0;
     let landmarkSide = 1;
@@ -597,7 +755,6 @@
       if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.Left = false;
       if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.Right = false;
     });
-    // Touch steering: tap/hold left or right half of the road
     canvas.addEventListener('touchstart', (e) => {
       e.preventDefault();
       for (const t of e.changedTouches) {
@@ -614,21 +771,151 @@
       document.getElementById('controls-hint').innerText = '👆 Touch & hold LEFT or RIGHT side to steer';
     }
 
-    // Stops: each leg shows the NEXT stop's landmark approaching on the roadside
-    const stops = [
-      { name: 'New York City' },
-      { name: 'Niagara Falls, NY', subject: 'Math', landmark: '🌊', scenery: ['🌲', '🏠', '🌳'] },
-      { name: 'Chicago, IL', subject: 'English', landmark: '🏙️', scenery: ['🏠', '🌲', '🏢'] },
-      { name: 'Mount Rushmore, SD', subject: 'Geography', landmark: '🗿', scenery: ['🌲', '⛰️', '🌳'] },
-      { name: 'Yellowstone National Park, WY', subject: 'Graphs', landmark: '🌋', scenery: ['🌲', '⛰️', '🐻'] },
-      { name: 'Grand Canyon, AZ', subject: 'Math', landmark: '🏜️', scenery: ['🌵', '🪨', '🌵'] },
-      { name: 'San Francisco, CA', landmark: '🌉', scenery: ['🌲', '🏠', '🌳'] }
-    ];
+    /* ================= Route selection map ================= */
+    let selStart = -1, selEnd = -1;
+
+    function mapXY(cx, cy, w, h) {
+      return [cx / 100 * w, cy / 100 * h];
+    }
+
+    function sizeMapCanvas() {
+      const wrap = document.getElementById('map-wrap');
+      mapCanvas.width = wrap.clientWidth;
+      mapCanvas.height = 300;
+    }
+
+    function drawMap() {
+      sizeMapCanvas();
+      const w = mapCanvas.width, h = mapCanvas.height;
+      // ocean
+      mctx.fillStyle = '#0b3b5e';
+      mctx.fillRect(0, 0, w, h);
+      // landmass
+      mctx.beginPath();
+      USA_OUTLINE.forEach(([cx, cy], i) => {
+        const [x, y] = mapXY(cx, cy, w, h);
+        if (i === 0) mctx.moveTo(x, y); else mctx.lineTo(x, y);
+      });
+      mctx.closePath();
+      mctx.fillStyle = '#86efac';
+      mctx.fill();
+      mctx.strokeStyle = '#166534';
+      mctx.lineWidth = 2;
+      mctx.stroke();
+      // great lakes
+      mctx.fillStyle = '#7dd3fc';
+      for (const [cx, cy, rx, ry] of GREAT_LAKES) {
+        const [x, y] = mapXY(cx, cy, w, h);
+        mctx.beginPath();
+        mctx.ellipse(x, y, rx / 100 * w, ry / 100 * h, 0, 0, Math.PI * 2);
+        mctx.fill();
+      }
+      // route preview
+      if (selStart >= 0 && selEnd >= 0) {
+        const preview = buildRoute(selStart, selEnd);
+        mctx.strokeStyle = '#f59e0b';
+        mctx.lineWidth = 3;
+        mctx.setLineDash([8, 6]);
+        mctx.beginPath();
+        preview.forEach((s, i) => {
+          const [x, y] = mapXY(s.x, s.y, w, h);
+          if (i === 0) mctx.moveTo(x, y); else mctx.lineTo(x, y);
+        });
+        mctx.stroke();
+        mctx.setLineDash([]);
+      }
+      // cities
+      mctx.textAlign = 'center';
+      CITIES.forEach((c, i) => {
+        const [x, y] = mapXY(c.x, c.y, w, h);
+        let fill = '#f59e0b', ring = '#ffffff';
+        if (i === selStart) { fill = '#10b981'; ring = '#065f46'; }
+        if (i === selEnd) { fill = '#ef4444'; ring = '#7f1d1d'; }
+        mctx.beginPath();
+        mctx.arc(x, y, 9, 0, Math.PI * 2);
+        mctx.fillStyle = fill;
+        mctx.fill();
+        mctx.lineWidth = 3;
+        mctx.strokeStyle = ring;
+        mctx.stroke();
+        if (i === selStart || i === selEnd) {
+          mctx.beginPath();
+          mctx.arc(x, y, 13, 0, Math.PI * 2);
+          mctx.lineWidth = 2;
+          mctx.strokeStyle = ring;
+          mctx.stroke();
+        }
+        // label
+        mctx.font = 'bold 11px "Segoe UI", sans-serif';
+        const ly = (c.y > 75 ? y - 15 : y + 20);
+        mctx.lineWidth = 3;
+        mctx.strokeStyle = 'rgba(11,59,94,0.9)';
+        mctx.strokeText(c.short, x, ly);
+        mctx.fillStyle = '#ffffff';
+        mctx.fillText(c.short, x, ly);
+      });
+    }
+
+    function mapClick(e) {
+      e.preventDefault();
+      const rect = mapCanvas.getBoundingClientRect();
+      const px = (e.clientX - rect.left) / rect.width * 100;
+      const py = (e.clientY - rect.top) / rect.height * 100;
+      let best = -1, bestD = 7;
+      CITIES.forEach((c, i) => {
+        const d = Math.hypot(c.x - px, c.y - py);
+        if (d < bestD) { bestD = d; best = i; }
+      });
+      if (best < 0) return;
+      if (selStart < 0) {
+        selStart = best;
+      } else if (selEnd < 0 && best !== selStart) {
+        selEnd = best;
+      } else {
+        // third tap: start over with a new start city
+        selStart = best;
+        selEnd = -1;
+      }
+      updateRouteStatus();
+      drawMap();
+    }
+    mapCanvas.addEventListener('click', mapClick);
+    mapCanvas.addEventListener('touchstart', (e) => {
+      const t = e.changedTouches[0];
+      mapClick({ clientX: t.clientX, clientY: t.clientY, preventDefault: () => e.preventDefault() });
+    }, { passive: false });
+
+    function updateRouteStatus() {
+      const el = document.getElementById('route-status');
+      const btn = document.getElementById('start-trip-btn');
+      if (selStart < 0) {
+        el.innerHTML = 'Pick your starting city 🟢';
+        btn.disabled = true;
+      } else if (selEnd < 0) {
+        el.innerHTML = `Start: <strong style="color:#10b981;">${CITIES[selStart].name}</strong> — now pick where to finish 🏁`;
+        btn.disabled = true;
+      } else {
+        const n = buildRoute(selStart, selEnd).length - 2;
+        el.innerHTML = `<strong style="color:#10b981;">${CITIES[selStart].short}</strong> → <strong style="color:#ef4444;">${CITIES[selEnd].short}</strong> · ${n} pit stop${n === 1 ? '' : 's'} along the way!`;
+        btn.disabled = false;
+      }
+    }
+
+    function surpriseRoute() {
+      selStart = R(CITIES.length);
+      do { selEnd = R(CITIES.length); } while (selEnd === selStart);
+      updateRouteStatus();
+      drawMap();
+    }
+
+    function buildMarkers() {
+      document.getElementById('city-markers').innerHTML =
+        stops.map(s => `<span class="city-marker">${s.short}</span>`).join('');
+    }
 
     /* ================= Perspective helpers ================= */
-    // lane: -1..1 across the road (beyond ±1 = roadside grass)
     function project(z, lane) {
-      const t = Math.max(0, 1 - z / MAXZ);   // 0 = horizon, 1 = at the car
+      const t = Math.max(0, 1 - z / MAXZ);
       const y = horizon + t * (H - horizon);
       const half = W * 0.05 + t * (W * 0.45 - W * 0.05);
       return { x: W / 2 + lane * half, y, s: 0.12 + 0.88 * Math.pow(t, 1.6), t };
@@ -643,54 +930,45 @@
 
     function drawCar(x, y, w) {
       const h = w * 0.52;
-      // shadow
       ctx.fillStyle = 'rgba(0,0,0,0.25)';
       ctx.beginPath();
       ctx.ellipse(x, y + 4, w * 0.48, h * 0.16, 0, 0, Math.PI * 2);
       ctx.fill();
-      // body
       ctx.fillStyle = '#ef4444';
       ctx.beginPath();
       ctx.roundRect(x - w / 2, y - h, w, h, 10);
       ctx.fill();
-      // cabin / windshield
       ctx.fillStyle = '#38bdf8';
       ctx.beginPath();
       ctx.roundRect(x - w * 0.32, y - h * 0.94, w * 0.64, h * 0.44, 6);
       ctx.fill();
-      // wheels
       ctx.fillStyle = '#111827';
       const ww = w * 0.14, wh = h * 0.34;
       ctx.fillRect(x - w / 2 - 2, y - h * 0.82, ww, wh);
       ctx.fillRect(x + w / 2 - ww + 2, y - h * 0.82, ww, wh);
       ctx.fillRect(x - w / 2 - 2, y - h * 0.28, ww, wh);
       ctx.fillRect(x + w / 2 - ww + 2, y - h * 0.28, ww, wh);
-      // headlights
       ctx.fillStyle = '#fde047';
       ctx.fillRect(x - w * 0.38, y - h * 0.98, w * 0.16, 5);
       ctx.fillRect(x + w * 0.22, y - h * 0.98, w * 0.16, 5);
     }
 
     function drawBackground() {
-      // sky
       const sky = ctx.createLinearGradient(0, 0, 0, horizon);
       sky.addColorStop(0, '#38bdf8');
       sky.addColorStop(1, '#bae6fd');
       ctx.fillStyle = sky;
       ctx.fillRect(0, 0, W, horizon);
-      // sun
       ctx.fillStyle = '#fde047';
       ctx.beginPath();
       ctx.arc(W * 0.82, horizon * 0.35, H * 0.07, 0, Math.PI * 2);
       ctx.fill();
-      // clouds
       ctx.fillStyle = 'rgba(255,255,255,0.9)';
       for (const c of clouds) {
         ctx.beginPath();
         ctx.ellipse(c.x, c.y, c.w, c.w * 0.38, 0, 0, Math.PI * 2);
         ctx.fill();
       }
-      // distant mountains
       ctx.fillStyle = '#64748b';
       ctx.beginPath();
       ctx.moveTo(0, horizon);
@@ -699,7 +977,6 @@
       ctx.lineTo(W, horizon);
       ctx.closePath();
       ctx.fill();
-      // ground
       const gnd = ctx.createLinearGradient(0, horizon, 0, H);
       gnd.addColorStop(0, '#4ade80');
       gnd.addColorStop(1, '#15803d');
@@ -709,7 +986,6 @@
 
     function drawRoad() {
       const topHalf = W * 0.05, botHalf = W * 0.45;
-      // asphalt
       ctx.fillStyle = '#334155';
       ctx.beginPath();
       ctx.moveTo(W / 2 - topHalf, horizon);
@@ -718,18 +994,16 @@
       ctx.lineTo(W / 2 - botHalf, H);
       ctx.closePath();
       ctx.fill();
-      // edge lines
       ctx.strokeStyle = '#f8fafc';
       ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.moveTo(W / 2 - topHalf, horizon); ctx.lineTo(W / 2 - botHalf, H);
       ctx.moveTo(W / 2 + topHalf, horizon); ctx.lineTo(W / 2 + botHalf, H);
       ctx.stroke();
-      // dashed lane dividers in perspective
       ctx.strokeStyle = '#fde047';
       for (const laneDiv of [-1 / 3, 1 / 3]) {
         for (let d = 0; d < MAXZ; d += 16) {
-          let z1 = d + dashOffset, z2 = z1 + 8;
+          const z1 = d + dashOffset, z2 = z1 + 8;
           if (z2 > MAXZ) continue;
           const p1 = project(z1, laneDiv), p2 = project(z2, laneDiv);
           ctx.lineWidth = Math.max(1, 4 * p1.s);
@@ -742,7 +1016,6 @@
     }
 
     function drawObjects() {
-      // far → near so close objects overlap far ones
       const sorted = objects.slice().sort((a, b) => b.z - a.z);
       for (const o of sorted) {
         const p = project(o.z, o.lane);
@@ -750,18 +1023,16 @@
         else if (o.kind === 'gas') drawEmoji('⛽', p.x, p.y, 46 * p.s);
         else if (o.kind === 'cone') drawEmoji('🚧', p.x, p.y, 46 * p.s);
         else if (o.kind === 'landmark') drawEmoji(o.emoji, p.x, p.y, 130 * p.s);
-        else drawEmoji(o.emoji, p.x, p.y, 64 * p.s); // deco: trees, cacti...
+        else drawEmoji(o.emoji, p.x, p.y, 64 * p.s);
       }
     }
 
     /* ================= Spawning ================= */
     function spawnObjects() {
       spawnTick++;
-      // road pickups / hazards in the 3 lanes
       if (spawnTick % 55 === 0) {
         objects.push({ kind: pick(['star', 'gas', 'cone', 'star', 'gas']), z: MAXZ, lane: pick([-0.62, 0, 0.62]) });
       }
-      // ambient roadside scenery for the current leg
       if (spawnTick % 34 === 0) {
         const leg = stops[Math.min(currentStopIndex + 1, stops.length - 1)];
         objects.push({
@@ -769,7 +1040,6 @@
           z: MAXZ, lane: pick([-1.9, -1.55, 1.55, 1.9])
         });
       }
-      // the upcoming stop's landmark, big on the roadside
       if (spawnTick % 500 === 0) {
         const leg = stops[Math.min(currentStopIndex + 1, stops.length - 1)];
         if (leg.landmark) {
@@ -783,9 +1053,10 @@
     function updateHUD() {
       document.getElementById('score').innerText = score;
       document.getElementById('fuel').innerText = Math.max(0, Math.round(fuel)) + '%';
-      document.getElementById('current-location').innerText = stops[currentStopIndex].name;
+      document.getElementById('current-location').innerText = stops.length ? stops[currentStopIndex].name : 'Choose a trip!';
 
-      const progressPct = (distanceTraveled / ((stops.length - 1) * distancePerLeg)) * 100;
+      const totalLegs = Math.max(1, stops.length - 1);
+      const progressPct = (distanceTraveled / (totalLegs * distancePerLeg)) * 100;
       document.getElementById('progress-fill').style.width = Math.min(100, progressPct) + '%';
 
       const markers = document.querySelectorAll('.city-marker');
@@ -796,8 +1067,12 @@
     }
 
     /* ================= Game flow ================= */
-    function startGame() {
-      document.getElementById('start-overlay').classList.add('hidden');
+    function startRoadTrip() {
+      if (selStart < 0 || selEnd < 0) return;
+      stops = buildRoute(selStart, selEnd);
+      routeCtx = buildRouteCtx(stops);
+      buildMarkers();
+      document.getElementById('route-overlay').classList.add('hidden');
       resetGameState();
       gameRunning = true;
       requestAnimationFrame(gameLoop);
@@ -822,22 +1097,24 @@
 
     function resetGame() {
       document.getElementById('victory-overlay').classList.add('hidden');
-      startGame();
+      gameRunning = false;
+      selStart = -1;
+      selEnd = -1;
+      updateRouteStatus();
+      document.getElementById('route-overlay').classList.remove('hidden');
+      drawMap();
     }
 
-    // Driving Game Loop — landscape perspective view
     function gameLoop() {
       if (!gameRunning || inChallenge) return;
 
       drawBackground();
       drawRoad();
 
-      // steering
       if (keys.Left) playerX -= PLAYER_SPEED;
       if (keys.Right) playerX += PLAYER_SPEED;
       playerX = Math.max(-1, Math.min(1, playerX));
 
-      // advance world
       dashOffset = (dashOffset + SPEEDZ) % 16;
       for (const c of clouds) {
         c.x -= 0.25;
@@ -849,7 +1126,6 @@
         const o = objects[i];
         o.z -= SPEEDZ;
         if (o.z < 3) { objects.splice(i, 1); continue; }
-        // collision near the car
         const p = project(o.z, o.lane);
         if ((o.kind === 'star' || o.kind === 'gas' || o.kind === 'cone') &&
             p.t > 0.8 && Math.abs(o.lane - playerX) < 0.3) {
@@ -865,20 +1141,17 @@
       }
       drawObjects();
 
-      // player car
       const carX = W / 2 + playerX * W * 0.45 * 0.9;
       drawCar(carX, H - 26, Math.min(110, W * 0.14));
 
-      // distance & fuel — a full tank lasts ~2 legs, so fuel cans matter
       distanceTraveled += 4;
       fuel -= 0.03;
 
       if (fuel <= 0) {
-        fuel = 25; // roadside assistance!
+        fuel = 25;
         score = Math.max(0, score - 10);
       }
 
-      // stop triggers
       const targetDistance = (currentStopIndex + 1) * distancePerLeg;
       if (distanceTraveled >= targetDistance && currentStopIndex < stops.length - 2) {
         triggerPitstop();
@@ -901,8 +1174,9 @@
 
       document.getElementById('stop-title').innerText = `📍 Arrival: ${stop.name} (${stop.subject} Challenge)`;
       document.getElementById('quiz-part').classList.remove('hidden');
-      document.getElementById('feedback-part').classList.add('hidden');
-      document.getElementById('feedback-part').style.display = 'none';
+      const fb = document.getElementById('feedback-part');
+      fb.classList.add('hidden');
+      fb.style.display = 'none';
 
       const qCard = document.getElementById('question-card');
       let html = `<p style="font-size: 1.2rem; font-weight: bold; margin-bottom: 10px;">${q.q}</p>`;
@@ -941,7 +1215,7 @@
       const card = document.getElementById('feedback-card');
       if (isCorrect) {
         score += 100;
-        fuel = 100; // full refuel bonus!
+        fuel = 100;
         document.getElementById('feedback-title').innerText = '🎉 Correct! +100 pts';
         card.className = 'feedback-card correct';
       } else {
@@ -966,9 +1240,17 @@
 
     function triggerVictory() {
       gameRunning = false;
+      const end = stops[stops.length - 1];
+      document.getElementById('victory-title').innerText = `🎉 You Reached ${end.city}!`;
+      document.getElementById('victory-text').innerText =
+        `Incredible driving and smart thinking! You road-tripped from ${stops[0].city} to ${end.city}!`;
       document.getElementById('final-score').innerText = score;
       document.getElementById('victory-overlay').classList.remove('hidden');
     }
+
+    /* ================= Boot ================= */
+    updateRouteStatus();
+    drawMap();
   </script>
 </body>
 </html>
