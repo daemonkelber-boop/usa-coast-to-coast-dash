@@ -26,10 +26,10 @@ st.caption(
 with st.sidebar:
     st.header("🎮 How to play")
     st.markdown(
-        "- Click inside the game once, then steer with ⬅️ ➡️ arrow keys (or A/D)\n"
-        "- Collect ⭐ star coins (+25 pts) and ⛽ fuel cans\n"
-        "- Avoid 🚧 road cones (−15 pts, −5% fuel)\n"
-        "- Answer the challenge at each stop to refuel and keep driving!"
+        "- Pick your trip on the map, then choose your car and color in the garage\n"
+        "- Click inside the game once, then steer with ⬅️ ➡️ arrow keys (or A/D); on touch, press and hold the left/right half of the road\n"
+        "- Collect ⭐ star coins (+25 pts) · dodge 🚗 traffic (−15 pts, −5% fuel)\n"
+        "- Correct answer: full refuel +100 pts · Wrong answer: −20 pts, −10% fuel (fuel comes ONLY from correct answers!)"
     )
     st.header("📚 Learning goals (3rd grade)")
     st.markdown(

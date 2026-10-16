@@ -67,8 +67,9 @@ options with one correct answer, shuffled).
 
 ## Controls
 
+- 🗺️ tap start/end cities on the map (or 🎲 Surprise Me), then pick your car — race car, sedan, SUV, van, truck, or bus — and its color in the garage
 - ⬅️ ➡️ arrow keys (or A/D) to steer — click inside the game first so it has keyboard focus
 - 👆 touch: press and hold the LEFT or RIGHT half of the road to steer
-- ⭐ star: +25 pts · ⛽ fuel can: +20% fuel · 🚧 cone: −15 pts, −5% fuel
-- Correct quiz answer: +100 pts and a full refuel · wrong answer: −20 pts, +50% fuel
+- ⭐ star: +25 pts · 🚗 traffic: dodge it! −15 pts, −5% fuel on a hit
+- Correct quiz answer: full refuel +100 pts · wrong answer: −20 pts, −10% fuel (fuel comes ONLY from correct answers!)
 - Landmarks (🌊 🏙️ 🗿 🌋 🏜️ 🌉) appear on the roadside as you approach each stop
